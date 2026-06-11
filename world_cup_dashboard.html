@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>World Cup Forecast Center</title>
+  <meta name="description" content="Interactive World Cup probability dashboard with team chances, stage progression, and top scoreline predictions." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.34.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; background: #0f172a; color: #e2e8f0; }
+    a { color: #38bdf8; }
+    .page { max-width: 1440px; margin: 20px 20px; padding: 0px; }
+    .hero { display: grid; gap: 16px; margin-bottom: 32px; padding: 32px 0 40px; text-align: center; }
+    .hero h1 { margin: 0; font-size: clamp(2rem, 3vw, 3.5rem); line-height: 1.05; }
+    .hero p { color: #94a3b8; margin: 0 auto; max-width: 760px; }
+    .tabs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 24px; justify-content: center; }
+    .tab-button { border: none; border-radius: 9999px; padding: 12px 20px; cursor: pointer; background: #1e293b; color: #cbd5e1; font-weight: 600; }
+    .tab-button.active { background: linear-gradient(135deg,#0ea5e9,#8b5cf6); color: #fff; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .card { background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(148, 163, 184, 0.12); border-radius: 18px; padding: 20px; box-shadow: 0 20px 60px rgba(15,23,42,.25); }
+    .card h3 { margin: 0 0 12px; font-size: 0.95rem; color: #e2e8f0; }
+    .card .metric { font-size: 2rem; font-weight: 800; color: #f8fafc; }
+    .metric-small { color: #94a3b8; margin-top: 8px; }
+    .chart-row { display: grid; gap: 18px; margin-bottom: 24px; }
+    .chart-box { background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(148, 163, 184, 0.12); border-radius: 20px; padding: 18px; }
+    .table-panel { overflow-x: auto; margin-bottom: 24px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { text-align: left; padding: 14px 16px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid rgba(148,163,184,.16); }
+    tbody tr { transition: background 0.18s ease; }
+    tbody tr:hover { background: rgba(148, 163, 184, 0.08); }
+    td { padding: 14px 16px; border-bottom: 1px solid rgba(148,163,184,.08); vertical-align: middle; }
+    .team-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+    .bar-row { display: flex; gap: 4px; height: 16px; border-radius: 999px; overflow: hidden; background: #1e293b; }
+    .bar-segment { height: 100%; }
+    .bar-win { background: #22c55e; }
+    .bar-draw { background: #facc15; }
+    .bar-loss { background: #ef4444; }
+    .mini-score { font-size: 0.88rem; color: #94a3b8; margin-top: 6px; }
+    .stage-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .stage-tab, .group-tab { border: 1px solid rgba(148,163,184,.24); border-radius: 999px; padding: 10px 18px; background: #1e293b; color: #cbd5e1; cursor: pointer; font-weight: 600; }
+    .stage-tab.active, .group-tab.active { background: linear-gradient(135deg,#0ea5e9,#8b5cf6); color: #fff; border-color: transparent; }
+    .group-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .match-filter-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+    .match-filter-row label { color: #cbd5e1; font-weight: 600; }
+    .group-match-heading { font-size: 1rem; margin-bottom: 12px; color: #e2e8f0; }
+    .score-list { margin-top: 6px; display: grid; gap: 4px; color: #cbd5e1; font-size: 0.88rem; }
+    .score-list div { padding: 4px 8px; background: rgba(148,163,184,.06); border-radius: 10px; }
+    .team-selector { margin: 16px 0 28px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    select { min-width: 260px; border-radius: 14px; border: 1px solid rgba(148,163,184,.20); padding: 14px 16px; background: #0f172a; color: #e2e8f0; font-size: 1rem; }
+    .team-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .match-card { background: rgba(15,23,42,.95); border: 1px solid rgba(148,163,184,.14); border-radius: 18px; padding: 18px; margin-bottom: 16px; }
+    .match-card h4 { margin: 0 0 8px; font-size: 1rem; }
+    .match-row { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 12px; align-items: center; margin-bottom: 12px; }
+    .score-preview { font-size: 0.95rem; color: #cbd5e1; }
+    .group-tables-section { margin-top: 24px; }
+    .group-tables-section h3 { margin-bottom: 18px; }
+    .raw-group-table { overflow-x: auto; }
+    .raw-group-table table { margin-bottom: 18px; }
+    .team-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: rgba(30,41,59,.95); border: 1px solid rgba(148,163,184,.12); }
+    .summary-card strong { display: block; font-size: 1.45rem; margin-top: 6px; color: #f8fafc; }
+    .match-card {
+      display: grid;
+      grid-template-columns: 480px 1fr 420px;
+      gap: 28px;
+
+      align-items: center;
+
+      padding: 26px 18px;
+
+      border-top: 1px solid rgba(255,255,255,.05);
+    }
+
+    .match-details {
+      min-width: 0;
+    }
+
+    .match-title {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+
+    .match-meta {
+      font-size: 1.5rem;
+      color: #8ea7c8;
+    }
+
+    .match-probability {
+      width: 100%;
+    }
+
+    .bar-row {
+      height: 24px;
+      display: flex;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #13203f;
+    }
+
+    .bar-segment {
+      height: 100%;
+    }
+
+    .bar-win {
+      background: #22c55e;
+    }
+
+    .bar-draw {
+      background: #facc15;
+    }
+
+    .bar-loss {
+      background: #ef4444;
+    }
+
+    .probability-text {
+      margin-top: 10px;
+      font-size: 1.3rem;
+      color: #8ea7c8;
+    }
+
+    .scorelines {
+        display: flex;
+        flex-direction: column;
+        align-items: center;   /* horizontal centering */
+        justify-content: center; /* vertical centering */
+        gap: 8px;
+        height: 100%;
+    }
+
+    .score-pill {
+      background: rgba(255,255,255,.04);
+      border-radius: 12px;
+      padding: 8px 14px;
+      color: #dbeafe;
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <div>
+        <h1>World Cup Prediction Dashboard</h1>
+        <p>Interactive insight into every team’s stage probability, match odds, and the top five most likely scorelines for every game.</p>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab-button active" data-panel="overview">Overview</button>
+      <button class="tab-button" data-panel="team-detail">Team Detail</button>
+      <button class="tab-button" data-panel="about">About</button>
+      <button class="tab-button" data-panel="curacao">Curaçao: The 1/250,000 2026 World Cup Win</button>
+    </div>
+
+    <div id="overview" class="panel active">
+      <div class="card-grid">
+        <div class="card"><h3>Top finalist probability</h3><div id="top-finalist" class="metric">–</div><div class="metric-small">Team with the highest chance to reach the final</div></div>
+        <div class="card"><h3>Top winner probability</h3><div id="top-winner" class="metric">–</div><div class="metric-small">Team most likely to win the World Cup</div></div>
+        <div class="card"><h3>Most likely semifinalists</h3><div id="top-sf" class="metric">–</div><div class="metric-small">Aggregated semifinal qualification strength</div></div>
+      </div>
+
+      <div class="chart-row">
+        <div class="chart-box">
+          <div class="stage-tabs" id="stage-tabs"></div>
+          <div id="stage-chart" style="height:460px;"></div>
+        </div>
+      </div>
+
+      <div class="table-panel">
+        <h2>Predicted group match probabilities</h2>
+        <div class="group-tabs" id="group-tabs"></div>
+        <div id="match-table"></div>
+      </div>
+
+      <div class="group-tables-section">
+        <h3>Most likely group tables</h3>
+        <div class="raw-group-table" id="group-tables"></div>
+      </div>
+    </div>
+
+    <div id="team-detail" class="panel">
+      <div class="team-selector">
+        <label for="team-select">Select a team:</label>
+        <select id="team-select"></select>
+      </div>
+      <div class="team-summary" id="team-cards"></div>
+      <div class="group-tables-section">
+        <h3>Team's group table</h3>
+        <div class="raw-group-table" id="team-group-table"></div>
+      </div>
+      <div class="chart-row">
+        <div class="chart-box"><h3>Progression outlook</h3><div id="team-stage-chart" style="height:360px;"></div></div>
+      </div>
+      <div class="table-panel">
+        <h2>Team match preview</h2>
+        <div id="team-matches"></div>
+      </div>
+      <h2 style="margin-top: 40px; margin-bottom: 20px; color: #f8fafc; font-size: 1.5rem;">ELO Rating Evolution</h2>
+        <p style="color: #94a3b8; margin-bottom: 20px;">See how team ratings have evolved over time. Add team names to add or remove them from the chart.</p>
+        
+        <div style="margin-bottom: 24px; padding: 16px; background: rgba(15,23,42,.6); border-radius: 12px;">
+          <div style="margin-bottom: 12px;">
+            <label style="color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 8px;">Select teams to display:</label>
+            <div id="about-elo-team-selector" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+          </div>
+        </div>
+
+        <div class="chart-box" style="margin-bottom: 32px;">
+          <div id="about-elo-chart" style="height:500px;"></div>
+        </div>
+    </div>
+
+    <div id="about" class="panel">
+      <div style="max-width: 1000px; margin: 0 auto; line-height: 1.8; color: #cbd5e1;">
+        <h2 style="margin-top: 24px; margin-bottom: 16px; color: #f8fafc; font-size: 2rem;">About This Model</h2>
+        
+        <div style="margin-bottom: 32px; padding: 20px; background: rgba(15,23,42,.7); border-radius: 12px; border-left: 4px solid #0ea5e9;">
+          <h3 style="margin-top: 0; color: #0ea5e9;">Betting & Predictions</h3>
+          <p>This model powers predictions for every World Cup game and helps identify the most probable outcomes across all 104 matches and all 500,000+ simulations. Use this to inform your betting strategy, but please gamble responsibly!</p>
+        </div>
+
+        <div style="margin-bottom: 32px; padding: 20px; background: rgba(15,23,42,.7); border-radius: 12px; border-left: 4px solid #8b5cf6;">
+          <h3 style="margin-top: 0; color: #8b5cf6;">The ELO System</h3>
+          <p>I created a custom ELO rating model based on all international football matches since 1981. Teams start at 1500 points, and ratings evolve naturally through every match played chronologically. Each result shifts ratings based on expected outcomes—upsets grant bigger points, expected wins grant fewer.</p>
+          <p>The ELO ratings shown here use <strong>the average of the last 3 months (5 games)</strong> before the tournament. This balances recent form with consistency, rather than using the absolute latest snapshot.</p>
+        </div>
+
+        <div style="margin-bottom: 32px; padding: 20px; background: rgba(15,23,42,.7); border-radius: 12px; border-left: 4px solid #14b8a6;">
+          <h3 style="margin-top: 0; color: #14b8a6;">From Ratings to Expected Goals</h3>
+          <p>The model doesn't directly predict wins—it predicts goals. Each team starts with a baseline of <strong>1.35 expected goals</strong> per match. The ELO difference between teams is converted into an exponential scale: a stronger team's expected output increases while the weaker team's decreases in mirror.</p>
+          <p style="margin-bottom: 0;"><strong>Example: Spain (1932.75) vs Curaçao (1500.91)</strong><br/>
+          The model estimates Spain to score ~4.7 expected goals, while Curaçao ~0.4. But that's just the mean—randomness comes next.</p>
+        </div>
+
+        <div style="margin-bottom: 32px; padding: 20px; background: rgba(15,23,42,.7); border-radius: 12px; border-left: 4px solid #f97316;">
+          <h3 style="margin-top: 0; color: #f97316;">Adding Realism: Poisson Distribution</h3>
+          <p>Expected goals don't determine the outcome. Instead, each team's actual score is drawn from a Poisson distribution, the standard way to model discrete events (like goals) in a fixed time window. Spain's 4.68 expected goals might become 2, 4, 6, or even 0. Curaçao's 0.39 usually means 0, but occasionally surprises with a goal.</p>
+          <p>This is what allows upsets. Even the most dominant teams can have quiet matches, and underdogs can find the breakthrough.</p>
+        </div>
+
+        <div style="margin-bottom: 32px; padding: 20px; background: rgba(15,23,42,.7); border-radius: 12px; border-left: 4px solid #22c55e;">
+          <h3 style="margin-top: 0; color: #22c55e;">Tournament Simulation at Scale</h3>
+          <p>To predict the full tournament, I run every single match through this ELO → expected goals → Poisson pipeline. Group tables build from scratch. Qualifiers are ranked on points and goal difference. The knockout stage advances the 8 best third-placed teams using FIFA's official rules (a 495-row lookup table mapping every possible combination).</p>
+          <p>One simulation gives one outcome. Sometimes Scotland wins. Usually it doesn't.</p>
+          <p style="margin-bottom: 0;"><strong>To get meaningful probabilities, I ran 500,000 complete simulations.</strong> Every team's chance to reach each stage, win the tournament, or claim third place is derived from how often that outcome occurred across all half-million runs.</p>
+        </div>
+
+        <div style="margin: 32px 0; padding: 20px; background: rgba(14, 165, 233, 0.1); border-radius: 12px; border-left: 4px solid #0ea5e9;">
+          <p style="margin: 0;"><strong>Created by Greg Eastman</strong> • <a href="https://www.linkedin.com/in/greg-eastman-2703892b2/" target="_blank" style="color: #38bdf8; text-decoration: none;">LinkedIn Profile</a></p>
+          
+        </div>
+
+        <h2 style="margin-top: 40px; margin-bottom: 20px; color: #f8fafc; font-size: 1.5rem;">ELO Rating Evolution</h2>
+        <p style="color: #94a3b8; margin-bottom: 20px;">See how team ratings have evolved over time. Add team names to add or remove them from the chart.</p>
+        
+        <div style="margin-bottom: 24px; padding: 16px; background: rgba(15,23,42,.6); border-radius: 12px;">
+          <div style="margin-bottom: 12px;">
+            <label style="color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 8px;">Select teams to display:</label>
+            <div id="about-elo-team-selector1" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+          </div>
+        </div>
+
+        <div class="chart-box" style="margin-bottom: 32px;">
+          <div id="about-elo-chart1" style="height:500px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="curacao" class="panel">
+
+      <div style="max-width: 1000px; margin: 0 auto; line-height: 1.8; color: #cbd5e1;">
+
+        <h2 style="margin-top: 24px; margin-bottom: 16px; color: #f8fafc; font-size: 2rem;">
+          Curaçao: The Twin Miracles of a 1-in-250,000 2026 World Cup Win
+        </h2>
+
+        <p>
+          Out of 500,000 simulated 2026 World Cups, Curaçao lifted the trophy exactly twice.
+          Not once in a generation. Not once in a century. Twice in half a million tournaments - two separate universes where football itself seemed to break. Both these journeys to conquer the world are absolutely incredible.
+        </p>
+
+        <p>
+          Curaçao is a Caribbean island located around 37 kilometres off the coast of Venezuela. It has a population of just 156,000 people - about the size of Oxford, a city whose university alone has more than 35,000 students. In 2026, they became the smallest nation ever to qualify for a FIFA World Cup. Despite their size, they aren't without talent. Their squad includes players such as Tahith Chong, formerly of Manchester United and now at Sheffield United, alongside winger Sontje Hansen. But compared to the traditional giants of international football, they remain massive outsiders, and these players will have to be playing out of their skin across the tournament. In my ELO mode (see more on About page) they were the worst ranked team in the tournament.
+        </p>
+
+        <p>
+          Curaçao’s group in the 2026 World Cup consists of 4 time world cup winning giants Germany, Ecuador who are undefeated internationally in the past 19 games entering the tournament, and Ivory Coast, Afcon Champions in 2023.
+        </p>
+
+        <p><strong>Let us explore the two simulations where they defied all odds to reach the final!</strong></p>
+
+        <h2 style="margin-top: 40px; margin-bottom: 20px; color: #f8fafc; font-size: 1.5rem;">
+          Simulation 170,000/500,000
+        </h2>
+
+        <p>
+          Simulation 170,000 / 500,000 produces one of the most structurally extreme tournament paths in the dataset, defined less by sustained dominance and more by repeated survival against elite opposition, almost entirely through penalty shootouts.
+        </p>
+
+        <div style="margin: 24px 0;">
+          <img src="sim1games.png"
+              style="width:100%; border-radius:12px; margin-bottom:10px; border:1px solid rgba(255,255,255,0.1);" />
+          <p style="color:#94a3b8; margin-top:0;">Group Fixtures — Simulation 170,000</p>
+
+          <img src="sim1table.png"
+              style="width:100%; border-radius:12px; margin-bottom:10px; border:1px solid rgba(255,255,255,0.1);" />
+          <p style="color:#94a3b8; margin-top:0;">Group Table — Simulation 170,000</p>
+        </div>
+
+        <p>
+          The group stage begins with an immediate disruption of the expected hierarchy. Curaçao began insanely,  with a 2–1 win over Germany, a result that appears in both of the World Cup winning runs. In parallel, Ecuador defeated the Ivory Coast, reinforcing a tightly contested group structure. Curaçao then suffered a 4–0 defeat to Ecuador and drew 1–1 with the Ivory Coast, finishing with just four points but still advancing in third place.
+        </p>
+
+        <p>
+          Curaçao defeated South Africa 2–0, while across the wider bracket, multiple traditional favourites advance as expected, briefly stabilising the tournament structure before the knockout rounds intensify. This is where it gets truly crazy.
+        </p>
+
+        <p>
+          The Round of 16 marks the first large-scale collapse of pre-tournament hierarchy. Curaçao progresses after eliminating England via a 2–2 draw and penalties, what an unbelievable result by the way, while simultaneously Germany knocks out France, and Colombia eliminate Spain.
+        </p>
+
+        <p>
+          The quarter-finals venture further into crazy. Curaçao draw 2–2 with Brazil and win the shootout, eliminating one of the most statistically dominant sides. At this point, Curaçao have removed both England and Brazil without winning a knockout match in regulation time.
+        </p>
+
+        <p>
+          In the semi-finals, they hold reigning champions Argentina to a 0–0 draw and once again eliminate them on penalties, meaning the defending champions exit the competition. Meanwhile, Germany progresses on the other side of the bracket by beating Senegal, setting up a rematch of the group stage upset.
+        </p>
+
+        <p>
+          The final becomes even more bonkers, where another 0-0 draw results in Germany and Curaçao going to penalties. And Curaçao win the tournament on penalties. This completes a sequence in which Curaçao won four consecutive knockout shootouts against England, Brazil, Argentina, and Germany in both the group stage context and the final. They finished the tournament as champions, with a minus 1 goal difference!
+        </p>
+
+        <h2 style="margin-top: 40px; margin-bottom: 20px; color: #f8fafc; font-size: 1.5rem;">
+          Simulation 380,000/500,000
+        </h2>
+
+        <div style="margin: 24px 0;">
+          <img src="sim2games.png"
+              style="width:100%; border-radius:12px; margin-bottom:10px; border:1px solid rgba(255,255,255,0.1);" />
+          <p style="color:#94a3b8; margin-top:0;">Group Fixtures — Simulation 380,000</p>
+
+          <img src="sim2table.png"
+              style="width:100%; border-radius:12px; margin-bottom:10px; border:1px solid rgba(255,255,255,0.1);" />
+          <p style="color:#94a3b8; margin-top:0;">Group Table — Simulation 380,000</p>
+        </div>
+
+        <p>
+          In the opening game, Curaçao faced Germany, who were expected to win the group comfortably. At the same time, Ecuador beat Ivory Coast, meaning the group was suddenly alive in ways nobody predicted. What followed was the first miracle of the simulation. Curaçao stunned Germany 2–1.
+        </p>
+
+        <p>
+          However their fortune did not go on. Curaçao then lost in heavily, 3–1 to Ecuador, followed by a 1–0 loss to the Ivory Coast. Curaçao progress in third place. At the same time, across the tournament, Argentina - another heavyweight - were already in trouble, drawing their opening two matches before collapsing in their final game to exit the competition early. One of the tournament favourites had already been dragged into chaos - and Curaçao were still alive.
+        </p>
+
+        <p>
+          In the Round of 32. England were eliminated 2–0 by Uzbekistan in one of the biggest shocks of the round. Portugal were dismantled 3–0 by Panama. Brazil, one of the pre-tournament favourites, were knocked out on penalties by Japan. Germany eliminated France. The tournament was turning into a graveyard for giants. Curaçao’s test in this round was Mexico, who had been flawless in their group, finishing with nine points and looking every bit a title contender after sweeping past South Africa, South Korea and the Czech Republic. They were expected to end Curaçao’s run immediately. After 90 minutes, it was 1–1. Nothing separated them. Penalties followed. Curaçao won.
+        </p>
+
+        <p>
+          By now, the tournament landscape was unrecognisable. With England, Brazil, Portugal, France and Argentina already gone, the path to the final was suddenly open in a way no simulation had predicted. In the Round of 16, Curaçao faced Uzbekistan - one of the surprise teams of the tournament. A disciplined defensive performance and a single decisive goal secured a 1–0 win, sending Curaçao into the quarter-finals. At the same stage, Colombia eliminated Spain 1–0, while the Netherlands and Germany remained among the last traditional powers standing.
+        </p>
+
+        <p>
+          Then came the rematch. Quarter-finals. Curaçao vs Germany. The same Germany that they had stunned in the group stage. Germany arrived for revenge. The match was tense and controlled, but once again, neither side could be separated. It ended 1–1. Once again, penalties decided everything. Once again, Curaçao prevailed. Ecuador simultaneously knocked out the Netherlands 1–0, removing another European heavyweight.
+        </p>
+
+        <p>
+          The semi-final brought Canada, another unexpected survivor, beating Uruguay, Paraguay and Egypt to reach that stage. In a tight, nervy match, they edged a 1–0 victory to reach the World Cup final - a stage they were never meant to see. Waiting for them in the final was Iran. Iran had topped a difficult group containing Belgium, Egypt and New Zealand without defeat, then continued through Cabo Verde, Iraq, Colombia and Ecuador. They entered the final as unlikely favourites. In the final, Curaçao produced their most complete performance of the entire simulation. For the first time since the group stage, they scored twice, shutting the game down completely.
+        </p>
+
+        <p>
+          Curaçao 2–0 Iran. World champions. All with a goal difference of 0 entering the final!
+        </p>
+
+        <h2 style="margin-top: 40px; margin-bottom: 20px; color: #f8fafc; font-size: 1.5rem;">
+          Simulation Summary
+        </h2>
+
+        <p style="margin-top: 40px; color: #cbd5e1;">
+          Across both simulations, Curaçao’s runs highlight just how chaotic and beautifully unrealistic football can become when scaled across hundreds of thousands of tournament outcomes. In both universes, they defy the structural logic of elite international football — repeatedly eliminating giants like Germany, Brazil, Argentina, England, and Mexico despite consistently being underdogs in every underlying metric. The pathways are statistically extreme: heavy reliance on knockout penalties, narrow margins in decisive matches, and timing that consistently favours survival over dominance. Yet that is exactly what makes the model compelling — it doesn’t just produce likely winners, it occasionally generates absurd, cinematic timelines where the weakest team in the tournament bends probability just enough to become world champions.
+        </p>
+
+      </div>
+    </div>
+  </div>
+  <div style="margin-top: 60px; padding: 20px; background: rgba(14, 165, 233, 0.08); border-radius: 12px; border-left: 4px solid #0ea5e9; text-align: center;">
+  
+    <p style="margin: 0; color: #cbd5e1;">
+      <strong>Created by Greg Eastman</strong>
+    </p>
+
+    <p style="margin: 8px 0 0 0;">
+      <a href="https://www.linkedin.com/in/greg-eastman-2703892b2/" target="_blank"
+        style="color: #38bdf8; text-decoration: none;">
+        LinkedIn Profile
+      </a>
+    </p>
+
+  </div>
+
+
+
+
+  <script>
+    window.WORLD_CUP_DATA = {"data": {}};
+    window.WORLD_CUP_DATA = {"data": {}};
+    const dashboardData = {"data": {}};
+  </script>
+  <script>
+    let RAW_DATA = {"matches": [{"teamA": "Mexico", "teamB": "South Africa", "slugA": "mexico", "slugB": "south-africa", "flagA": "\ud83c\uddf2\ud83c\uddfd", "flagB": "\ud83c\uddff\ud83c\udde6", "codeA": "MEX", "codeB": "RSA", "pA": 80.0, "pDraw": 20.0, "pB": 0.0, "topScores": [{"score": "2-1", "prob": 40.0}, {"score": "1-1", "prob": 20.0}, {"score": "2-0", "prob": 20.0}, {"score": "4-1", "prob": 20.0}], "date": "11/06/2026", "location": "Mexico City, Mexico"}, {"teamA": "Mexico", "teamB": "South Korea", "slugA": "mexico", "slugB": "south-korea", "flagA": "\ud83c\uddf2\ud83c\uddfd", "flagB": "\ud83c\uddf0\ud83c\uddf7", "codeA": "MEX", "codeB": "KOR", "pA": 60.0, "pDraw": 40.0, "pB": 0.0, "topScores": [{"score": "2-1", "prob": 40.0}, {"score": "2-0", "prob": 20.0}, {"score": "2-2", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "18/06/2026", "location": "Zapopan, Mexico"}, {"teamA": "Mexico", "teamB": "Czech Republic", "slugA": "mexico", "slugB": "czech-republic", "flagA": "\ud83c\uddf2\ud83c\uddfd", "flagB": "\ud83c\udde8\ud83c\uddff", "codeA": "MEX", "codeB": "CZE", "pA": 40.0, "pDraw": 20.0, "pB": 40.0, "topScores": [{"score": "0-1", "prob": 40.0}, {"score": "4-2", "prob": 20.0}, {"score": "1-0", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "24/06/2026", "location": "Mexico City, Mexico"}, {"teamA": "South Africa", "teamB": "South Korea", "slugA": "south-africa", "slugB": "south-korea", "flagA": "\ud83c\uddff\ud83c\udde6", "flagB": "\ud83c\uddf0\ud83c\uddf7", "codeA": "RSA", "codeB": "KOR", "pA": 0.0, "pDraw": 0.0, "pB": 100.0, "topScores": [{"score": "0-1", "prob": 20.0}, {"score": "1-3", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "0-3", "prob": 20.0}, {"score": "0-4", "prob": 20.0}], "date": "24/06/2026", "location": "Guadalupe, Mexico"}, {"teamA": "South Africa", "teamB": "Czech Republic", "slugA": "south-africa", "slugB": "czech-republic", "flagA": "\ud83c\uddff\ud83c\udde6", "flagB": "\ud83c\udde8\ud83c\uddff", "codeA": "RSA", "codeB": "CZE", "pA": 0.0, "pDraw": 40.0, "pB": 60.0, "topScores": [{"score": "0-0", "prob": 40.0}, {"score": "1-2", "prob": 20.0}, {"score": "2-5", "prob": 20.0}, {"score": "0-1", "prob": 20.0}], "date": "18/06/2026", "location": "Atlanta, United States"}, {"teamA": "South Korea", "teamB": "Czech Republic", "slugA": "south-korea", "slugB": "czech-republic", "flagA": "\ud83c\uddf0\ud83c\uddf7", "flagB": "\ud83c\udde8\ud83c\uddff", "codeA": "KOR", "codeB": "CZE", "pA": 40.0, "pDraw": 0.0, "pB": 60.0, "topScores": [{"score": "0-1", "prob": 60.0}, {"score": "3-2", "prob": 20.0}, {"score": "2-1", "prob": 20.0}], "date": "11/06/2026", "location": "Zapopan, Mexico"}, {"teamA": "Canada", "teamB": "Bosnia and Herzegovina", "slugA": "canada", "slugB": "bosnia-and-herzegovina", "flagA": "\ud83c\udde8\ud83c\udde6", "flagB": "\ud83c\udde7\ud83c\udde6", "codeA": "CAN", "codeB": "BIH", "pA": 60.0, "pDraw": 40.0, "pB": 0.0, "topScores": [{"score": "2-2", "prob": 40.0}, {"score": "5-1", "prob": 20.0}, {"score": "3-2", "prob": 20.0}, {"score": "6-2", "prob": 20.0}], "date": "12/06/2026", "location": "Toronto, Canada"}, {"teamA": "Canada", "teamB": "Qatar", "slugA": "canada", "slugB": "qatar", "flagA": "\ud83c\udde8\ud83c\udde6", "flagB": "\ud83c\uddf6\ud83c\udde6", "codeA": "CAN", "codeB": "QAT", "pA": 60.0, "pDraw": 0.0, "pB": 40.0, "topScores": [{"score": "2-1", "prob": 20.0}, {"score": "0-2", "prob": 20.0}, {"score": "3-0", "prob": 20.0}, {"score": "4-1", "prob": 20.0}, {"score": "0-1", "prob": 20.0}], "date": "18/06/2026", "location": "Vancouver, Canada"}, {"teamA": "Canada", "teamB": "Switzerland", "slugA": "canada", "slugB": "switzerland", "flagA": "\ud83c\udde8\ud83c\udde6", "flagB": "\ud83c\udde8\ud83c\udded", "codeA": "CAN", "codeB": "SUI", "pA": 20.0, "pDraw": 20.0, "pB": 60.0, "topScores": [{"score": "1-3", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "1-5", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "2-3", "prob": 20.0}], "date": "24/06/2026", "location": "Vancouver, Canada"}, {"teamA": "Bosnia and Herzegovina", "teamB": "Qatar", "slugA": "bosnia-and-herzegovina", "slugB": "qatar", "flagA": "\ud83c\udde7\ud83c\udde6", "flagB": "\ud83c\uddf6\ud83c\udde6", "codeA": "BIH", "codeB": "QAT", "pA": 60.0, "pDraw": 0.0, "pB": 40.0, "topScores": [{"score": "3-1", "prob": 40.0}, {"score": "0-3", "prob": 20.0}, {"score": "4-2", "prob": 20.0}, {"score": "0-1", "prob": 20.0}], "date": "24/06/2026", "location": "Seattle, United States"}, {"teamA": "Bosnia and Herzegovina", "teamB": "Switzerland", "slugA": "bosnia-and-herzegovina", "slugB": "switzerland", "flagA": "\ud83c\udde7\ud83c\udde6", "flagB": "\ud83c\udde8\ud83c\udded", "codeA": "BIH", "codeB": "SUI", "pA": 20.0, "pDraw": 40.0, "pB": 40.0, "topScores": [{"score": "2-1", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "0-0", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "1-4", "prob": 20.0}], "date": "18/06/2026", "location": "Inglewood, United States"}, {"teamA": "Qatar", "teamB": "Switzerland", "slugA": "qatar", "slugB": "switzerland", "flagA": "\ud83c\uddf6\ud83c\udde6", "flagB": "\ud83c\udde8\ud83c\udded", "codeA": "QAT", "codeB": "SUI", "pA": 20.0, "pDraw": 0.0, "pB": 80.0, "topScores": [{"score": "1-3", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "3-1", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "0-3", "prob": 20.0}], "date": "13/06/2026", "location": "Santa Clara, United States"}, {"teamA": "Brazil", "teamB": "Morocco", "slugA": "brazil", "slugB": "morocco", "flagA": "\ud83c\udde7\ud83c\uddf7", "flagB": "\ud83c\uddf2\ud83c\udde6", "codeA": "BRA", "codeB": "MAR", "pA": 0.0, "pDraw": 40.0, "pB": 60.0, "topScores": [{"score": "1-1", "prob": 20.0}, {"score": "0-0", "prob": 20.0}, {"score": "1-3", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "2-4", "prob": 20.0}], "date": "13/06/2026", "location": "East Rutherford, United States"}, {"teamA": "Brazil", "teamB": "Haiti", "slugA": "brazil", "slugB": "haiti", "flagA": "\ud83c\udde7\ud83c\uddf7", "flagB": "\ud83c\udded\ud83c\uddf9", "codeA": "BRA", "codeB": "HAI", "pA": 100.0, "pDraw": 0.0, "pB": 0.0, "topScores": [{"score": "3-0", "prob": 20.0}, {"score": "10-0", "prob": 20.0}, {"score": "4-1", "prob": 20.0}, {"score": "1-0", "prob": 20.0}, {"score": "3-1", "prob": 20.0}], "date": "19/06/2026", "location": "Philadelphia, United States"}, {"teamA": "Brazil", "teamB": "Scotland", "slugA": "brazil", "slugB": "scotland", "flagA": "\ud83c\udde7\ud83c\uddf7", "flagB": "\ud83c\uddec\ud83c\udde7", "codeA": "BRA", "codeB": "SCO", "pA": 80.0, "pDraw": 20.0, "pB": 0.0, "topScores": [{"score": "1-0", "prob": 20.0}, {"score": "3-1", "prob": 20.0}, {"score": "2-2", "prob": 20.0}, {"score": "4-0", "prob": 20.0}, {"score": "3-0", "prob": 20.0}], "date": "24/06/2026", "location": "Miami Gardens, United States"}, {"teamA": "Morocco", "teamB": "Haiti", "slugA": "morocco", "slugB": "haiti", "flagA": "\ud83c\uddf2\ud83c\udde6", "flagB": "\ud83c\udded\ud83c\uddf9", "codeA": "MAR", "codeB": "HAI", "pA": 100.0, "pDraw": 0.0, "pB": 0.0, "topScores": [{"score": "1-0", "prob": 20.0}, {"score": "3-2", "prob": 20.0}, {"score": "3-0", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "2-0", "prob": 20.0}], "date": "24/06/2026", "location": "Atlanta, United States"}, {"teamA": "Morocco", "teamB": "Scotland", "slugA": "morocco", "slugB": "scotland", "flagA": "\ud83c\uddf2\ud83c\udde6", "flagB": "\ud83c\uddec\ud83c\udde7", "codeA": "MAR", "codeB": "SCO", "pA": 60.0, "pDraw": 40.0, "pB": 0.0, "topScores": [{"score": "2-2", "prob": 20.0}, {"score": "4-1", "prob": 20.0}, {"score": "0-0", "prob": 20.0}, {"score": "3-2", "prob": 20.0}, {"score": "2-0", "prob": 20.0}], "date": "19/06/2026", "location": "Foxborough, United States"}, {"teamA": "Haiti", "teamB": "Scotland", "slugA": "haiti", "slugB": "scotland", "flagA": "\ud83c\udded\ud83c\uddf9", "flagB": "\ud83c\uddec\ud83c\udde7", "codeA": "HAI", "codeB": "SCO", "pA": 0.0, "pDraw": 20.0, "pB": 80.0, "topScores": [{"score": "2-3", "prob": 20.0}, {"score": "1-5", "prob": 20.0}, {"score": "1-3", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "0-2", "prob": 20.0}], "date": "13/06/2026", "location": "Foxborough, United States"}, {"teamA": "United States", "teamB": "Paraguay", "slugA": "united-states", "slugB": "paraguay", "flagA": "\ud83c\uddfa\ud83c\uddf8", "flagB": "\ud83c\uddf5\ud83c\uddfe", "codeA": "USA", "codeB": "PAR", "pA": 40.0, "pDraw": 0.0, "pB": 60.0, "topScores": [{"score": "1-2", "prob": 40.0}, {"score": "0-1", "prob": 20.0}, {"score": "1-0", "prob": 20.0}, {"score": "2-0", "prob": 20.0}], "date": "12/06/2026", "location": "Inglewood, United States"}, {"teamA": "United States", "teamB": "Australia", "slugA": "united-states", "slugB": "australia", "flagA": "\ud83c\uddfa\ud83c\uddf8", "flagB": "\ud83c\udde6\ud83c\uddfa", "codeA": "USA", "codeB": "AUS", "pA": 40.0, "pDraw": 0.0, "pB": 60.0, "topScores": [{"score": "1-0", "prob": 40.0}, {"score": "0-5", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "2-4", "prob": 20.0}], "date": "19/06/2026", "location": "Seattle, United States"}, {"teamA": "United States", "teamB": "Turkey", "slugA": "united-states", "slugB": "turkey", "flagA": "\ud83c\uddfa\ud83c\uddf8", "flagB": "\ud83c\uddf9\ud83c\uddf7", "codeA": "USA", "codeB": "TUR", "pA": 40.0, "pDraw": 20.0, "pB": 40.0, "topScores": [{"score": "2-4", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "0-2", "prob": 20.0}, {"score": "1-0", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "25/06/2026", "location": "Inglewood, United States"}, {"teamA": "Paraguay", "teamB": "Australia", "slugA": "paraguay", "slugB": "australia", "flagA": "\ud83c\uddf5\ud83c\uddfe", "flagB": "\ud83c\udde6\ud83c\uddfa", "codeA": "PAR", "codeB": "AUS", "pA": 80.0, "pDraw": 20.0, "pB": 0.0, "topScores": [{"score": "2-0", "prob": 60.0}, {"score": "0-0", "prob": 20.0}, {"score": "3-1", "prob": 20.0}], "date": "25/06/2026", "location": "Santa Clara, United States"}, {"teamA": "Paraguay", "teamB": "Turkey", "slugA": "paraguay", "slugB": "turkey", "flagA": "\ud83c\uddf5\ud83c\uddfe", "flagB": "\ud83c\uddf9\ud83c\uddf7", "codeA": "PAR", "codeB": "TUR", "pA": 20.0, "pDraw": 80.0, "pB": 0.0, "topScores": [{"score": "1-1", "prob": 80.0}, {"score": "4-1", "prob": 20.0}], "date": "19/06/2026", "location": "Santa Clara, United States"}, {"teamA": "Australia", "teamB": "Turkey", "slugA": "australia", "slugB": "turkey", "flagA": "\ud83c\udde6\ud83c\uddfa", "flagB": "\ud83c\uddf9\ud83c\uddf7", "codeA": "AUS", "codeB": "TUR", "pA": 40.0, "pDraw": 20.0, "pB": 40.0, "topScores": [{"score": "3-1", "prob": 20.0}, {"score": "0-2", "prob": 20.0}, {"score": "4-2", "prob": 20.0}, {"score": "2-2", "prob": 20.0}, {"score": "2-3", "prob": 20.0}], "date": "13/06/2026", "location": "Vancouver, Canada"}, {"teamA": "Germany", "teamB": "Cura\u00e7ao", "slugA": "germany", "slugB": "cura-ao", "flagA": "\ud83c\udde9\ud83c\uddea", "flagB": "\ud83c\udde8\ud83c\uddfc", "codeA": "GER", "codeB": "CUW", "pA": 60.0, "pDraw": 20.0, "pB": 20.0, "topScores": [{"score": "0-0", "prob": 20.0}, {"score": "1-0", "prob": 20.0}, {"score": "2-0", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "3-0", "prob": 20.0}], "date": "14/06/2026", "location": "Houston, United States"}, {"teamA": "Germany", "teamB": "Ivory Coast", "slugA": "germany", "slugB": "ivory-coast", "flagA": "\ud83c\udde9\ud83c\uddea", "flagB": "\ud83c\udde8\ud83c\uddee", "codeA": "GER", "codeB": "CIV", "pA": 60.0, "pDraw": 40.0, "pB": 0.0, "topScores": [{"score": "1-1", "prob": 40.0}, {"score": "2-1", "prob": 40.0}, {"score": "2-0", "prob": 20.0}], "date": "20/06/2026", "location": "Toronto, Canada"}, {"teamA": "Germany", "teamB": "Ecuador", "slugA": "germany", "slugB": "ecuador", "flagA": "\ud83c\udde9\ud83c\uddea", "flagB": "\ud83c\uddea\ud83c\udde8", "codeA": "GER", "codeB": "ECU", "pA": 40.0, "pDraw": 40.0, "pB": 20.0, "topScores": [{"score": "1-1", "prob": 40.0}, {"score": "1-0", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "7-2", "prob": 20.0}], "date": "25/06/2026", "location": "East Rutherford, United States"}, {"teamA": "Cura\u00e7ao", "teamB": "Ivory Coast", "slugA": "cura-ao", "slugB": "ivory-coast", "flagA": "\ud83c\udde8\ud83c\uddfc", "flagB": "\ud83c\udde8\ud83c\uddee", "codeA": "CUW", "codeB": "CIV", "pA": 20.0, "pDraw": 0.0, "pB": 80.0, "topScores": [{"score": "0-1", "prob": 40.0}, {"score": "1-3", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "2-3", "prob": 20.0}], "date": "25/06/2026", "location": "Philadelphia, United States"}, {"teamA": "Cura\u00e7ao", "teamB": "Ecuador", "slugA": "cura-ao", "slugB": "ecuador", "flagA": "\ud83c\udde8\ud83c\uddfc", "flagB": "\ud83c\uddea\ud83c\udde8", "codeA": "CUW", "codeB": "ECU", "pA": 0.0, "pDraw": 0.0, "pB": 100.0, "topScores": [{"score": "0-2", "prob": 40.0}, {"score": "1-5", "prob": 20.0}, {"score": "2-4", "prob": 20.0}, {"score": "1-6", "prob": 20.0}], "date": "20/06/2026", "location": "Kansas City, United States"}, {"teamA": "Ivory Coast", "teamB": "Ecuador", "slugA": "ivory-coast", "slugB": "ecuador", "flagA": "\ud83c\udde8\ud83c\uddee", "flagB": "\ud83c\uddea\ud83c\udde8", "codeA": "CIV", "codeB": "ECU", "pA": 20.0, "pDraw": 0.0, "pB": 80.0, "topScores": [{"score": "0-2", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "1-0", "prob": 20.0}, {"score": "1-3", "prob": 20.0}, {"score": "0-1", "prob": 20.0}], "date": "14/06/2026", "location": "Philadelphia, United States"}, {"teamA": "Netherlands", "teamB": "Japan", "slugA": "netherlands", "slugB": "japan", "flagA": "\ud83c\uddf3\ud83c\uddf1", "flagB": "\ud83c\uddef\ud83c\uddf5", "codeA": "NED", "codeB": "JPN", "pA": 40.0, "pDraw": 20.0, "pB": 40.0, "topScores": [{"score": "0-1", "prob": 40.0}, {"score": "2-1", "prob": 20.0}, {"score": "4-1", "prob": 20.0}, {"score": "2-2", "prob": 20.0}], "date": "14/06/2026", "location": "Arlington, United States"}, {"teamA": "Netherlands", "teamB": "Sweden", "slugA": "netherlands", "slugB": "sweden", "flagA": "\ud83c\uddf3\ud83c\uddf1", "flagB": "\ud83c\uddf8\ud83c\uddea", "codeA": "NED", "codeB": "SWE", "pA": 80.0, "pDraw": 0.0, "pB": 20.0, "topScores": [{"score": "2-1", "prob": 40.0}, {"score": "2-0", "prob": 40.0}, {"score": "1-3", "prob": 20.0}], "date": "20/06/2026", "location": "Houston, United States"}, {"teamA": "Netherlands", "teamB": "Tunisia", "slugA": "netherlands", "slugB": "tunisia", "flagA": "\ud83c\uddf3\ud83c\uddf1", "flagB": "\ud83c\uddf9\ud83c\uddf3", "codeA": "NED", "codeB": "TUN", "pA": 100.0, "pDraw": 0.0, "pB": 0.0, "topScores": [{"score": "2-0", "prob": 40.0}, {"score": "1-0", "prob": 40.0}, {"score": "2-1", "prob": 20.0}], "date": "25/06/2026", "location": "Kansas City, United States"}, {"teamA": "Japan", "teamB": "Sweden", "slugA": "japan", "slugB": "sweden", "flagA": "\ud83c\uddef\ud83c\uddf5", "flagB": "\ud83c\uddf8\ud83c\uddea", "codeA": "JPN", "codeB": "SWE", "pA": 60.0, "pDraw": 0.0, "pB": 40.0, "topScores": [{"score": "3-1", "prob": 20.0}, {"score": "1-0", "prob": 20.0}, {"score": "2-0", "prob": 20.0}, {"score": "0-4", "prob": 20.0}, {"score": "0-1", "prob": 20.0}], "date": "25/06/2026", "location": "Arlington, United States"}, {"teamA": "Japan", "teamB": "Tunisia", "slugA": "japan", "slugB": "tunisia", "flagA": "\ud83c\uddef\ud83c\uddf5", "flagB": "\ud83c\uddf9\ud83c\uddf3", "codeA": "JPN", "codeB": "TUN", "pA": 60.0, "pDraw": 20.0, "pB": 20.0, "topScores": [{"score": "0-0", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "3-1", "prob": 20.0}, {"score": "3-2", "prob": 20.0}, {"score": "2-0", "prob": 20.0}], "date": "20/06/2026", "location": "Guadalupe, Mexico"}, {"teamA": "Sweden", "teamB": "Tunisia", "slugA": "sweden", "slugB": "tunisia", "flagA": "\ud83c\uddf8\ud83c\uddea", "flagB": "\ud83c\uddf9\ud83c\uddf3", "codeA": "SWE", "codeB": "TUN", "pA": 20.0, "pDraw": 20.0, "pB": 60.0, "topScores": [{"score": "2-0", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "1-3", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "0-1", "prob": 20.0}], "date": "14/06/2026", "location": "Guadalupe, Mexico"}, {"teamA": "Belgium", "teamB": "Egypt", "slugA": "belgium", "slugB": "egypt", "flagA": "\ud83c\udde7\ud83c\uddea", "flagB": "\ud83c\uddea\ud83c\uddec", "codeA": "BEL", "codeB": "EGY", "pA": 40.0, "pDraw": 40.0, "pB": 20.0, "topScores": [{"score": "4-4", "prob": 20.0}, {"score": "3-0", "prob": 20.0}, {"score": "0-0", "prob": 20.0}, {"score": "3-1", "prob": 20.0}, {"score": "1-3", "prob": 20.0}], "date": "15/06/2026", "location": "Seattle, United States"}, {"teamA": "Belgium", "teamB": "Iran", "slugA": "belgium", "slugB": "iran", "flagA": "\ud83c\udde7\ud83c\uddea", "flagB": "\ud83c\uddee\ud83c\uddf7", "codeA": "BEL", "codeB": "IRN", "pA": 60.0, "pDraw": 20.0, "pB": 20.0, "topScores": [{"score": "2-1", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "2-0", "prob": 20.0}, {"score": "3-1", "prob": 20.0}], "date": "21/06/2026", "location": "Inglewood, United States"}, {"teamA": "Belgium", "teamB": "New Zealand", "slugA": "belgium", "slugB": "new-zealand", "flagA": "\ud83c\udde7\ud83c\uddea", "flagB": "\ud83c\uddf3\ud83c\uddff", "codeA": "BEL", "codeB": "NZL", "pA": 80.0, "pDraw": 0.0, "pB": 20.0, "topScores": [{"score": "3-1", "prob": 20.0}, {"score": "3-0", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "5-1", "prob": 20.0}], "date": "26/06/2026", "location": "Vancouver, Canada"}, {"teamA": "Egypt", "teamB": "Iran", "slugA": "egypt", "slugB": "iran", "flagA": "\ud83c\uddea\ud83c\uddec", "flagB": "\ud83c\uddee\ud83c\uddf7", "codeA": "EGY", "codeB": "IRN", "pA": 20.0, "pDraw": 20.0, "pB": 60.0, "topScores": [{"score": "3-2", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "2-3", "prob": 20.0}, {"score": "0-2", "prob": 20.0}, {"score": "0-0", "prob": 20.0}], "date": "26/06/2026", "location": "Seattle, United States"}, {"teamA": "Egypt", "teamB": "New Zealand", "slugA": "egypt", "slugB": "new-zealand", "flagA": "\ud83c\uddea\ud83c\uddec", "flagB": "\ud83c\uddf3\ud83c\uddff", "codeA": "EGY", "codeB": "NZL", "pA": 20.0, "pDraw": 20.0, "pB": 60.0, "topScores": [{"score": "0-1", "prob": 40.0}, {"score": "2-1", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "0-0", "prob": 20.0}], "date": "21/06/2026", "location": "Vancouver, Canada"}, {"teamA": "Iran", "teamB": "New Zealand", "slugA": "iran", "slugB": "new-zealand", "flagA": "\ud83c\uddee\ud83c\uddf7", "flagB": "\ud83c\uddf3\ud83c\uddff", "codeA": "IRN", "codeB": "NZL", "pA": 60.0, "pDraw": 20.0, "pB": 20.0, "topScores": [{"score": "1-0", "prob": 20.0}, {"score": "3-0", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "1-2", "prob": 20.0}], "date": "15/06/2026", "location": "Inglewood, United States"}, {"teamA": "Spain", "teamB": "Cape Verde", "slugA": "spain", "slugB": "cape-verde", "flagA": "\ud83c\uddea\ud83c\uddf8", "flagB": "\ud83c\udde8\ud83c\uddfb", "codeA": "ESP", "codeB": "CPV", "pA": 100.0, "pDraw": 0.0, "pB": 0.0, "topScores": [{"score": "3-0", "prob": 40.0}, {"score": "2-0", "prob": 40.0}, {"score": "2-1", "prob": 20.0}], "date": "15/06/2026", "location": "Atlanta, United States"}, {"teamA": "Spain", "teamB": "Saudi Arabia", "slugA": "spain", "slugB": "saudi-arabia", "flagA": "\ud83c\uddea\ud83c\uddf8", "flagB": "\ud83c\uddf8\ud83c\udde6", "codeA": "ESP", "codeB": "KSA", "pA": 80.0, "pDraw": 0.0, "pB": 20.0, "topScores": [{"score": "3-0", "prob": 40.0}, {"score": "3-2", "prob": 20.0}, {"score": "1-2", "prob": 20.0}, {"score": "1-0", "prob": 20.0}], "date": "21/06/2026", "location": "Atlanta, United States"}, {"teamA": "Spain", "teamB": "Uruguay", "slugA": "spain", "slugB": "uruguay", "flagA": "\ud83c\uddea\ud83c\uddf8", "flagB": "\ud83c\uddfa\ud83c\uddfe", "codeA": "ESP", "codeB": "URU", "pA": 80.0, "pDraw": 20.0, "pB": 0.0, "topScores": [{"score": "6-3", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "2-0", "prob": 20.0}, {"score": "3-2", "prob": 20.0}, {"score": "2-1", "prob": 20.0}], "date": "26/06/2026", "location": "Zapopan, Mexico"}, {"teamA": "Cape Verde", "teamB": "Saudi Arabia", "slugA": "cape-verde", "slugB": "saudi-arabia", "flagA": "\ud83c\udde8\ud83c\uddfb", "flagB": "\ud83c\uddf8\ud83c\udde6", "codeA": "CPV", "codeB": "KSA", "pA": 40.0, "pDraw": 60.0, "pB": 0.0, "topScores": [{"score": "1-1", "prob": 40.0}, {"score": "4-1", "prob": 20.0}, {"score": "3-2", "prob": 20.0}, {"score": "3-3", "prob": 20.0}], "date": "26/06/2026", "location": "Houston, United States"}, {"teamA": "Cape Verde", "teamB": "Uruguay", "slugA": "cape-verde", "slugB": "uruguay", "flagA": "\ud83c\udde8\ud83c\uddfb", "flagB": "\ud83c\uddfa\ud83c\uddfe", "codeA": "CPV", "codeB": "URU", "pA": 0.0, "pDraw": 20.0, "pB": 80.0, "topScores": [{"score": "0-3", "prob": 20.0}, {"score": "0-2", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "2-3", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "21/06/2026", "location": "Miami Gardens, United States"}, {"teamA": "Saudi Arabia", "teamB": "Uruguay", "slugA": "saudi-arabia", "slugB": "uruguay", "flagA": "\ud83c\uddf8\ud83c\udde6", "flagB": "\ud83c\uddfa\ud83c\uddfe", "codeA": "KSA", "codeB": "URU", "pA": 40.0, "pDraw": 40.0, "pB": 20.0, "topScores": [{"score": "3-0", "prob": 20.0}, {"score": "3-1", "prob": 20.0}, {"score": "2-2", "prob": 20.0}, {"score": "0-5", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "15/06/2026", "location": "Miami Gardens, United States"}, {"teamA": "France", "teamB": "Senegal", "slugA": "france", "slugB": "senegal", "flagA": "\ud83c\uddeb\ud83c\uddf7", "flagB": "\ud83c\uddf8\ud83c\uddf3", "codeA": "FRA", "codeB": "SEN", "pA": 60.0, "pDraw": 20.0, "pB": 20.0, "topScores": [{"score": "1-0", "prob": 40.0}, {"score": "0-1", "prob": 20.0}, {"score": "2-0", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "16/06/2026", "location": "East Rutherford, United States"}, {"teamA": "France", "teamB": "Iraq", "slugA": "france", "slugB": "iraq", "flagA": "\ud83c\uddeb\ud83c\uddf7", "flagB": "\ud83c\uddee\ud83c\uddf6", "codeA": "FRA", "codeB": "IRQ", "pA": 60.0, "pDraw": 40.0, "pB": 0.0, "topScores": [{"score": "4-1", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "0-0", "prob": 20.0}, {"score": "4-0", "prob": 20.0}], "date": "22/06/2026", "location": "Philadelphia, United States"}, {"teamA": "France", "teamB": "Norway", "slugA": "france", "slugB": "norway", "flagA": "\ud83c\uddeb\ud83c\uddf7", "flagB": "\ud83c\uddf3\ud83c\uddf4", "codeA": "FRA", "codeB": "NOR", "pA": 60.0, "pDraw": 40.0, "pB": 0.0, "topScores": [{"score": "1-1", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "3-3", "prob": 20.0}, {"score": "2-0", "prob": 20.0}, {"score": "1-0", "prob": 20.0}], "date": "26/06/2026", "location": "Foxborough, United States"}, {"teamA": "Senegal", "teamB": "Iraq", "slugA": "senegal", "slugB": "iraq", "flagA": "\ud83c\uddf8\ud83c\uddf3", "flagB": "\ud83c\uddee\ud83c\uddf6", "codeA": "SEN", "codeB": "IRQ", "pA": 20.0, "pDraw": 40.0, "pB": 40.0, "topScores": [{"score": "1-1", "prob": 40.0}, {"score": "1-2", "prob": 20.0}, {"score": "2-0", "prob": 20.0}, {"score": "0-1", "prob": 20.0}], "date": "26/06/2026", "location": "Toronto, Canada"}, {"teamA": "Senegal", "teamB": "Norway", "slugA": "senegal", "slugB": "norway", "flagA": "\ud83c\uddf8\ud83c\uddf3", "flagB": "\ud83c\uddf3\ud83c\uddf4", "codeA": "SEN", "codeB": "NOR", "pA": 60.0, "pDraw": 40.0, "pB": 0.0, "topScores": [{"score": "2-1", "prob": 40.0}, {"score": "2-0", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "2-2", "prob": 20.0}], "date": "22/06/2026", "location": "East Rutherford, United States"}, {"teamA": "Iraq", "teamB": "Norway", "slugA": "iraq", "slugB": "norway", "flagA": "\ud83c\uddee\ud83c\uddf6", "flagB": "\ud83c\uddf3\ud83c\uddf4", "codeA": "IRQ", "codeB": "NOR", "pA": 20.0, "pDraw": 20.0, "pB": 60.0, "topScores": [{"score": "0-1", "prob": 60.0}, {"score": "2-1", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "16/06/2026", "location": "Foxborough, United States"}, {"teamA": "Argentina", "teamB": "Algeria", "slugA": "argentina", "slugB": "algeria", "flagA": "\ud83c\udde6\ud83c\uddf7", "flagB": "\ud83c\udde9\ud83c\uddff", "codeA": "ARG", "codeB": "ALG", "pA": 80.0, "pDraw": 20.0, "pB": 0.0, "topScores": [{"score": "2-1", "prob": 40.0}, {"score": "4-1", "prob": 20.0}, {"score": "3-1", "prob": 20.0}, {"score": "0-0", "prob": 20.0}], "date": "16/06/2026", "location": "Kansas City, United States"}, {"teamA": "Argentina", "teamB": "Austria", "slugA": "argentina", "slugB": "austria", "flagA": "\ud83c\udde6\ud83c\uddf7", "flagB": "\ud83c\udde6\ud83c\uddf9", "codeA": "ARG", "codeB": "AUT", "pA": 60.0, "pDraw": 0.0, "pB": 40.0, "topScores": [{"score": "1-2", "prob": 40.0}, {"score": "3-0", "prob": 20.0}, {"score": "4-0", "prob": 20.0}, {"score": "1-0", "prob": 20.0}], "date": "22/06/2026", "location": "Arlington, United States"}, {"teamA": "Argentina", "teamB": "Jordan", "slugA": "argentina", "slugB": "jordan", "flagA": "\ud83c\udde6\ud83c\uddf7", "flagB": "\ud83c\uddef\ud83c\uddf4", "codeA": "ARG", "codeB": "JOR", "pA": 60.0, "pDraw": 40.0, "pB": 0.0, "topScores": [{"score": "2-1", "prob": 40.0}, {"score": "1-1", "prob": 40.0}, {"score": "4-2", "prob": 20.0}], "date": "27/06/2026", "location": "Arlington, United States"}, {"teamA": "Algeria", "teamB": "Austria", "slugA": "algeria", "slugB": "austria", "flagA": "\ud83c\udde9\ud83c\uddff", "flagB": "\ud83c\udde6\ud83c\uddf9", "codeA": "ALG", "codeB": "AUT", "pA": 0.0, "pDraw": 60.0, "pB": 40.0, "topScores": [{"score": "2-2", "prob": 20.0}, {"score": "2-3", "prob": 20.0}, {"score": "0-0", "prob": 20.0}, {"score": "1-3", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "27/06/2026", "location": "Kansas City, United States"}, {"teamA": "Algeria", "teamB": "Jordan", "slugA": "algeria", "slugB": "jordan", "flagA": "\ud83c\udde9\ud83c\uddff", "flagB": "\ud83c\uddef\ud83c\uddf4", "codeA": "ALG", "codeB": "JOR", "pA": 60.0, "pDraw": 20.0, "pB": 20.0, "topScores": [{"score": "1-0", "prob": 40.0}, {"score": "2-2", "prob": 20.0}, {"score": "3-0", "prob": 20.0}, {"score": "3-4", "prob": 20.0}], "date": "22/06/2026", "location": "Santa Clara, United States"}, {"teamA": "Austria", "teamB": "Jordan", "slugA": "austria", "slugB": "jordan", "flagA": "\ud83c\udde6\ud83c\uddf9", "flagB": "\ud83c\uddef\ud83c\uddf4", "codeA": "AUT", "codeB": "JOR", "pA": 20.0, "pDraw": 80.0, "pB": 0.0, "topScores": [{"score": "1-1", "prob": 60.0}, {"score": "2-1", "prob": 20.0}, {"score": "2-2", "prob": 20.0}], "date": "16/06/2026", "location": "Santa Clara, United States"}, {"teamA": "Portugal", "teamB": "DR Congo", "slugA": "portugal", "slugB": "dr-congo", "flagA": "\ud83c\uddf5\ud83c\uddf9", "flagB": "\ud83c\udde8\ud83c\udde9", "codeA": "POR", "codeB": "COD", "pA": 40.0, "pDraw": 40.0, "pB": 20.0, "topScores": [{"score": "1-0", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "2-0", "prob": 20.0}, {"score": "0-0", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "17/06/2026", "location": "Houston, United States"}, {"teamA": "Portugal", "teamB": "Uzbekistan", "slugA": "portugal", "slugB": "uzbekistan", "flagA": "\ud83c\uddf5\ud83c\uddf9", "flagB": "\ud83c\uddfa\ud83c\uddff", "codeA": "POR", "codeB": "UZB", "pA": 80.0, "pDraw": 0.0, "pB": 20.0, "topScores": [{"score": "3-2", "prob": 40.0}, {"score": "2-0", "prob": 20.0}, {"score": "1-4", "prob": 20.0}, {"score": "3-1", "prob": 20.0}], "date": "23/06/2026", "location": "Houston, United States"}, {"teamA": "Portugal", "teamB": "Colombia", "slugA": "portugal", "slugB": "colombia", "flagA": "\ud83c\uddf5\ud83c\uddf9", "flagB": "\ud83c\udde8\ud83c\uddf4", "codeA": "POR", "codeB": "COL", "pA": 20.0, "pDraw": 80.0, "pB": 0.0, "topScores": [{"score": "2-2", "prob": 40.0}, {"score": "2-1", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "0-0", "prob": 20.0}], "date": "27/06/2026", "location": "Miami Gardens, United States"}, {"teamA": "DR Congo", "teamB": "Uzbekistan", "slugA": "dr-congo", "slugB": "uzbekistan", "flagA": "\ud83c\udde8\ud83c\udde9", "flagB": "\ud83c\uddfa\ud83c\uddff", "codeA": "COD", "codeB": "UZB", "pA": 60.0, "pDraw": 0.0, "pB": 40.0, "topScores": [{"score": "2-1", "prob": 20.0}, {"score": "0-3", "prob": 20.0}, {"score": "4-0", "prob": 20.0}, {"score": "1-3", "prob": 20.0}, {"score": "2-0", "prob": 20.0}], "date": "27/06/2026", "location": "Atlanta, United States"}, {"teamA": "DR Congo", "teamB": "Colombia", "slugA": "dr-congo", "slugB": "colombia", "flagA": "\ud83c\udde8\ud83c\udde9", "flagB": "\ud83c\udde8\ud83c\uddf4", "codeA": "COD", "codeB": "COL", "pA": 20.0, "pDraw": 20.0, "pB": 60.0, "topScores": [{"score": "0-1", "prob": 60.0}, {"score": "1-0", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "23/06/2026", "location": "Zapopan, Mexico"}, {"teamA": "Uzbekistan", "teamB": "Colombia", "slugA": "uzbekistan", "slugB": "colombia", "flagA": "\ud83c\uddfa\ud83c\uddff", "flagB": "\ud83c\udde8\ud83c\uddf4", "codeA": "UZB", "codeB": "COL", "pA": 20.0, "pDraw": 0.0, "pB": 80.0, "topScores": [{"score": "1-5", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "1-3", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "1-6", "prob": 20.0}], "date": "17/06/2026", "location": "Mexico City, Mexico"}, {"teamA": "England", "teamB": "Croatia", "slugA": "england", "slugB": "croatia", "flagA": "\ud83c\uddec\ud83c\udde7", "flagB": "\ud83c\udded\ud83c\uddf7", "codeA": "ENG", "codeB": "CRO", "pA": 20.0, "pDraw": 20.0, "pB": 60.0, "topScores": [{"score": "0-2", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "0-1", "prob": 20.0}, {"score": "2-1", "prob": 20.0}, {"score": "1-2", "prob": 20.0}], "date": "17/06/2026", "location": "Arlington, United States"}, {"teamA": "England", "teamB": "Ghana", "slugA": "england", "slugB": "ghana", "flagA": "\ud83c\uddec\ud83c\udde7", "flagB": "\ud83c\uddec\ud83c\udded", "codeA": "ENG", "codeB": "GHA", "pA": 100.0, "pDraw": 0.0, "pB": 0.0, "topScores": [{"score": "2-1", "prob": 40.0}, {"score": "4-0", "prob": 20.0}, {"score": "4-2", "prob": 20.0}, {"score": "5-0", "prob": 20.0}], "date": "23/06/2026", "location": "Foxborough, United States"}, {"teamA": "England", "teamB": "Panama", "slugA": "england", "slugB": "panama", "flagA": "\ud83c\uddec\ud83c\udde7", "flagB": "\ud83c\uddf5\ud83c\udde6", "codeA": "ENG", "codeB": "PAN", "pA": 20.0, "pDraw": 60.0, "pB": 20.0, "topScores": [{"score": "0-0", "prob": 40.0}, {"score": "1-3", "prob": 20.0}, {"score": "3-0", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "27/06/2026", "location": "East Rutherford, United States"}, {"teamA": "Croatia", "teamB": "Ghana", "slugA": "croatia", "slugB": "ghana", "flagA": "\ud83c\udded\ud83c\uddf7", "flagB": "\ud83c\uddec\ud83c\udded", "codeA": "CRO", "codeB": "GHA", "pA": 100.0, "pDraw": 0.0, "pB": 0.0, "topScores": [{"score": "4-0", "prob": 40.0}, {"score": "3-0", "prob": 20.0}, {"score": "3-2", "prob": 20.0}, {"score": "4-2", "prob": 20.0}], "date": "27/06/2026", "location": "Philadelphia, United States"}, {"teamA": "Croatia", "teamB": "Panama", "slugA": "croatia", "slugB": "panama", "flagA": "\ud83c\udded\ud83c\uddf7", "flagB": "\ud83c\uddf5\ud83c\udde6", "codeA": "CRO", "codeB": "PAN", "pA": 40.0, "pDraw": 40.0, "pB": 20.0, "topScores": [{"score": "2-1", "prob": 20.0}, {"score": "1-1", "prob": 20.0}, {"score": "1-0", "prob": 20.0}, {"score": "2-2", "prob": 20.0}, {"score": "0-1", "prob": 20.0}], "date": "23/06/2026", "location": "Toronto, Canada"}, {"teamA": "Ghana", "teamB": "Panama", "slugA": "ghana", "slugB": "panama", "flagA": "\ud83c\uddec\ud83c\udded", "flagB": "\ud83c\uddf5\ud83c\udde6", "codeA": "GHA", "codeB": "PAN", "pA": 0.0, "pDraw": 40.0, "pB": 60.0, "topScores": [{"score": "0-1", "prob": 20.0}, {"score": "2-3", "prob": 20.0}, {"score": "1-3", "prob": 20.0}, {"score": "0-0", "prob": 20.0}, {"score": "1-1", "prob": 20.0}], "date": "17/06/2026", "location": "Toronto, Canada"}], "teams": [{"name": "Germany", "slug": "germany", "flag": "\ud83c\udde9\ud83c\uddea", "code": "GER", "qualifiedR32": 100.0, "qualifiedR16": 60.0, "qualifiedQF": 40.0, "qualifiedSF": 40.0, "qualifiedFinal": 40.0, "winner": 40.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Czech Republic", "slug": "czech-republic", "flag": "\ud83c\udde8\ud83c\uddff", "code": "CZE", "qualifiedR32": 80.0, "qualifiedR16": 40.0, "qualifiedQF": 20.0, "qualifiedSF": 20.0, "qualifiedFinal": 20.0, "winner": 20.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Mexico", "slug": "mexico", "flag": "\ud83c\uddf2\ud83c\uddfd", "code": "MEX", "qualifiedR32": 100.0, "qualifiedR16": 40.0, "qualifiedQF": 40.0, "qualifiedSF": 40.0, "qualifiedFinal": 40.0, "winner": 20.0, "runnerUp": 20.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Argentina", "slug": "argentina", "flag": "\ud83c\udde6\ud83c\uddf7", "code": "ARG", "qualifiedR32": 100.0, "qualifiedR16": 80.0, "qualifiedQF": 60.0, "qualifiedSF": 60.0, "qualifiedFinal": 40.0, "winner": 20.0, "runnerUp": 20.0, "thirdPlace": 20.0, "thirdOrFourth": 20.0}, {"name": "Turkey", "slug": "turkey", "flag": "\ud83c\uddf9\ud83c\uddf7", "code": "TUR", "qualifiedR32": 80.0, "qualifiedR16": 60.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Qatar", "slug": "qatar", "flag": "\ud83c\uddf6\ud83c\udde6", "code": "QAT", "qualifiedR32": 0.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Morocco", "slug": "morocco", "flag": "\ud83c\uddf2\ud83c\udde6", "code": "MAR", "qualifiedR32": 100.0, "qualifiedR16": 60.0, "qualifiedQF": 40.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Netherlands", "slug": "netherlands", "flag": "\ud83c\uddf3\ud83c\uddf1", "code": "NED", "qualifiedR32": 100.0, "qualifiedR16": 40.0, "qualifiedQF": 40.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "New Zealand", "slug": "new-zealand", "flag": "\ud83c\uddf3\ud83c\uddff", "code": "NZL", "qualifiedR32": 40.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Norway", "slug": "norway", "flag": "\ud83c\uddf3\ud83c\uddf4", "code": "NOR", "qualifiedR32": 60.0, "qualifiedR16": 60.0, "qualifiedQF": 20.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Panama", "slug": "panama", "flag": "\ud83c\uddf5\ud83c\udde6", "code": "PAN", "qualifiedR32": 80.0, "qualifiedR16": 40.0, "qualifiedQF": 20.0, "qualifiedSF": 20.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 20.0}, {"name": "Uruguay", "slug": "uruguay", "flag": "\ud83c\uddfa\ud83c\uddfe", "code": "URU", "qualifiedR32": 80.0, "qualifiedR16": 40.0, "qualifiedQF": 40.0, "qualifiedSF": 20.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 20.0}, {"name": "Paraguay", "slug": "paraguay", "flag": "\ud83c\uddf5\ud83c\uddfe", "code": "PAR", "qualifiedR32": 100.0, "qualifiedR16": 40.0, "qualifiedQF": 20.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Portugal", "slug": "portugal", "flag": "\ud83c\uddf5\ud83c\uddf9", "code": "POR", "qualifiedR32": 80.0, "qualifiedR16": 60.0, "qualifiedQF": 20.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Saudi Arabia", "slug": "saudi-arabia", "flag": "\ud83c\uddf8\ud83c\udde6", "code": "KSA", "qualifiedR32": 40.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Tunisia", "slug": "tunisia", "flag": "\ud83c\uddf9\ud83c\uddf3", "code": "TUN", "qualifiedR32": 40.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Scotland", "slug": "scotland", "flag": "\ud83c\uddec\ud83c\udde7", "code": "SCO", "qualifiedR32": 60.0, "qualifiedR16": 20.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "United States", "slug": "united-states", "flag": "\ud83c\uddfa\ud83c\uddf8", "code": "USA", "qualifiedR32": 60.0, "qualifiedR16": 20.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Senegal", "slug": "senegal", "flag": "\ud83c\uddf8\ud83c\uddf3", "code": "SEN", "qualifiedR32": 80.0, "qualifiedR16": 40.0, "qualifiedQF": 20.0, "qualifiedSF": 20.0, "qualifiedFinal": 20.0, "winner": 0.0, "runnerUp": 20.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "South Africa", "slug": "south-africa", "flag": "\ud83c\uddff\ud83c\udde6", "code": "RSA", "qualifiedR32": 0.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "South Korea", "slug": "south-korea", "flag": "\ud83c\uddf0\ud83c\uddf7", "code": "KOR", "qualifiedR32": 100.0, "qualifiedR16": 80.0, "qualifiedQF": 40.0, "qualifiedSF": 20.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 20.0}, {"name": "Spain", "slug": "spain", "flag": "\ud83c\uddea\ud83c\uddf8", "code": "ESP", "qualifiedR32": 100.0, "qualifiedR16": 40.0, "qualifiedQF": 40.0, "qualifiedSF": 20.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 20.0, "thirdOrFourth": 20.0}, {"name": "Sweden", "slug": "sweden", "flag": "\ud83c\uddf8\ud83c\uddea", "code": "SWE", "qualifiedR32": 40.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Switzerland", "slug": "switzerland", "flag": "\ud83c\udde8\ud83c\udded", "code": "SUI", "qualifiedR32": 100.0, "qualifiedR16": 60.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Algeria", "slug": "algeria", "flag": "\ud83c\udde9\ud83c\uddff", "code": "ALG", "qualifiedR32": 60.0, "qualifiedR16": 40.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Japan", "slug": "japan", "flag": "\ud83c\uddef\ud83c\uddf5", "code": "JPN", "qualifiedR32": 80.0, "qualifiedR16": 40.0, "qualifiedQF": 40.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Jordan", "slug": "jordan", "flag": "\ud83c\uddef\ud83c\uddf4", "code": "JOR", "qualifiedR32": 20.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Ivory Coast", "slug": "ivory-coast", "flag": "\ud83c\udde8\ud83c\uddee", "code": "CIV", "qualifiedR32": 60.0, "qualifiedR16": 20.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Australia", "slug": "australia", "flag": "\ud83c\udde6\ud83c\uddfa", "code": "AUS", "qualifiedR32": 60.0, "qualifiedR16": 20.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Austria", "slug": "austria", "flag": "\ud83c\udde6\ud83c\uddf9", "code": "AUT", "qualifiedR32": 80.0, "qualifiedR16": 40.0, "qualifiedQF": 40.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Belgium", "slug": "belgium", "flag": "\ud83c\udde7\ud83c\uddea", "code": "BEL", "qualifiedR32": 80.0, "qualifiedR16": 40.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Bosnia and Herzegovina", "slug": "bosnia-and-herzegovina", "flag": "\ud83c\udde7\ud83c\udde6", "code": "BIH", "qualifiedR32": 40.0, "qualifiedR16": 20.0, "qualifiedQF": 20.0, "qualifiedSF": 20.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 20.0}, {"name": "Brazil", "slug": "brazil", "flag": "\ud83c\udde7\ud83c\uddf7", "code": "BRA", "qualifiedR32": 100.0, "qualifiedR16": 100.0, "qualifiedQF": 60.0, "qualifiedSF": 40.0, "qualifiedFinal": 20.0, "winner": 0.0, "runnerUp": 20.0, "thirdPlace": 20.0, "thirdOrFourth": 20.0}, {"name": "Canada", "slug": "canada", "flag": "\ud83c\udde8\ud83c\udde6", "code": "CAN", "qualifiedR32": 100.0, "qualifiedR16": 60.0, "qualifiedQF": 20.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Cape Verde", "slug": "cape-verde", "flag": "\ud83c\udde8\ud83c\uddfb", "code": "CPV", "qualifiedR32": 20.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Colombia", "slug": "colombia", "flag": "\ud83c\udde8\ud83c\uddf4", "code": "COL", "qualifiedR32": 100.0, "qualifiedR16": 40.0, "qualifiedQF": 20.0, "qualifiedSF": 20.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 20.0, "thirdOrFourth": 20.0}, {"name": "Croatia", "slug": "croatia", "flag": "\ud83c\udded\ud83c\uddf7", "code": "CRO", "qualifiedR32": 100.0, "qualifiedR16": 60.0, "qualifiedQF": 40.0, "qualifiedSF": 20.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 20.0, "thirdOrFourth": 20.0}, {"name": "Cura\u00e7ao", "slug": "cura-ao", "flag": "\ud83c\udde8\ud83c\uddfc", "code": "CUW", "qualifiedR32": 20.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "DR Congo", "slug": "dr-congo", "flag": "\ud83c\udde8\ud83c\udde9", "code": "COD", "qualifiedR32": 40.0, "qualifiedR16": 20.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Ecuador", "slug": "ecuador", "flag": "\ud83c\uddea\ud83c\udde8", "code": "ECU", "qualifiedR32": 100.0, "qualifiedR16": 40.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Egypt", "slug": "egypt", "flag": "\ud83c\uddea\ud83c\uddec", "code": "EGY", "qualifiedR32": 40.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "England", "slug": "england", "flag": "\ud83c\uddec\ud83c\udde7", "code": "ENG", "qualifiedR32": 100.0, "qualifiedR16": 60.0, "qualifiedQF": 60.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "France", "slug": "france", "flag": "\ud83c\uddeb\ud83c\uddf7", "code": "FRA", "qualifiedR32": 100.0, "qualifiedR16": 60.0, "qualifiedQF": 20.0, "qualifiedSF": 20.0, "qualifiedFinal": 20.0, "winner": 0.0, "runnerUp": 20.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Ghana", "slug": "ghana", "flag": "\ud83c\uddec\ud83c\udded", "code": "GHA", "qualifiedR32": 0.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Haiti", "slug": "haiti", "flag": "\ud83c\udded\ud83c\uddf9", "code": "HAI", "qualifiedR32": 0.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Iran", "slug": "iran", "flag": "\ud83c\uddee\ud83c\uddf7", "code": "IRN", "qualifiedR32": 80.0, "qualifiedR16": 40.0, "qualifiedQF": 20.0, "qualifiedSF": 20.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 20.0}, {"name": "Iraq", "slug": "iraq", "flag": "\ud83c\uddee\ud83c\uddf6", "code": "IRQ", "qualifiedR32": 60.0, "qualifiedR16": 20.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}, {"name": "Uzbekistan", "slug": "uzbekistan", "flag": "\ud83c\uddfa\ud83c\uddff", "code": "UZB", "qualifiedR32": 40.0, "qualifiedR16": 0.0, "qualifiedQF": 0.0, "qualifiedSF": 0.0, "qualifiedFinal": 0.0, "winner": 0.0, "runnerUp": 0.0, "thirdPlace": 0.0, "thirdOrFourth": 0.0}]};
+    let GROUP_TABLE_HTML = "<style type=\"text/css\">\n#T_3bf61 td {\n  text-align: center;\n}\n#T_3bf61 th {\n  text-align: center;\n  font-weight: bold;\n}\n#T_3bf61 thead tr:nth-child(2) th {\n  border-bottom: 2px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(2) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(2) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(6) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(6) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(10) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(10) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(14) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(14) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(18) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(18) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(22) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(22) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(26) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(26) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(30) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(30) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(34) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(34) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(38) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(38) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(42) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(42) {\n  border-left: 3px solid black;\n}\n#T_3bf61 th.col_heading.level1:nth-child(46) {\n  border-left: 3px solid black;\n}\n#T_3bf61 td:nth-child(46) {\n  border-left: 3px solid black;\n}\n</style>\n<table id=\"T_3bf61\">\n  <thead>\n    <tr>\n      <th class=\"blank level0\" >&nbsp;</th>\n      <th id=\"T_3bf61_level0_col0\" class=\"col_heading level0 col0\" colspan=\"4\">A</th>\n      <th id=\"T_3bf61_level0_col4\" class=\"col_heading level0 col4\" colspan=\"4\">B</th>\n      <th id=\"T_3bf61_level0_col8\" class=\"col_heading level0 col8\" colspan=\"4\">C</th>\n      <th id=\"T_3bf61_level0_col12\" class=\"col_heading level0 col12\" colspan=\"4\">D</th>\n      <th id=\"T_3bf61_level0_col16\" class=\"col_heading level0 col16\" colspan=\"4\">E</th>\n      <th id=\"T_3bf61_level0_col20\" class=\"col_heading level0 col20\" colspan=\"4\">F</th>\n      <th id=\"T_3bf61_level0_col24\" class=\"col_heading level0 col24\" colspan=\"4\">G</th>\n      <th id=\"T_3bf61_level0_col28\" class=\"col_heading level0 col28\" colspan=\"4\">H</th>\n      <th id=\"T_3bf61_level0_col32\" class=\"col_heading level0 col32\" colspan=\"4\">I</th>\n      <th id=\"T_3bf61_level0_col36\" class=\"col_heading level0 col36\" colspan=\"4\">J</th>\n      <th id=\"T_3bf61_level0_col40\" class=\"col_heading level0 col40\" colspan=\"4\">K</th>\n      <th id=\"T_3bf61_level0_col44\" class=\"col_heading level0 col44\" colspan=\"4\">L</th>\n    </tr>\n    <tr>\n      <th class=\"blank level1\" >&nbsp;</th>\n      <th id=\"T_3bf61_level1_col0\" class=\"col_heading level1 col0\" >Czech Republic</th>\n      <th id=\"T_3bf61_level1_col1\" class=\"col_heading level1 col1\" >Mexico</th>\n      <th id=\"T_3bf61_level1_col2\" class=\"col_heading level1 col2\" >South Korea</th>\n      <th id=\"T_3bf61_level1_col3\" class=\"col_heading level1 col3\" >South Africa</th>\n      <th id=\"T_3bf61_level1_col4\" class=\"col_heading level1 col4\" >Switzerland</th>\n      <th id=\"T_3bf61_level1_col5\" class=\"col_heading level1 col5\" >Canada</th>\n      <th id=\"T_3bf61_level1_col6\" class=\"col_heading level1 col6\" >Bosnia and Herzegovina</th>\n      <th id=\"T_3bf61_level1_col7\" class=\"col_heading level1 col7\" >Qatar</th>\n      <th id=\"T_3bf61_level1_col8\" class=\"col_heading level1 col8\" >Morocco</th>\n      <th id=\"T_3bf61_level1_col9\" class=\"col_heading level1 col9\" >Brazil</th>\n      <th id=\"T_3bf61_level1_col10\" class=\"col_heading level1 col10\" >Scotland</th>\n      <th id=\"T_3bf61_level1_col11\" class=\"col_heading level1 col11\" >Haiti</th>\n      <th id=\"T_3bf61_level1_col12\" class=\"col_heading level1 col12\" >Paraguay</th>\n      <th id=\"T_3bf61_level1_col13\" class=\"col_heading level1 col13\" >Turkey</th>\n      <th id=\"T_3bf61_level1_col14\" class=\"col_heading level1 col14\" >United States</th>\n      <th id=\"T_3bf61_level1_col15\" class=\"col_heading level1 col15\" >Australia</th>\n      <th id=\"T_3bf61_level1_col16\" class=\"col_heading level1 col16\" >Germany</th>\n      <th id=\"T_3bf61_level1_col17\" class=\"col_heading level1 col17\" >Ecuador</th>\n      <th id=\"T_3bf61_level1_col18\" class=\"col_heading level1 col18\" >Ivory Coast</th>\n      <th id=\"T_3bf61_level1_col19\" class=\"col_heading level1 col19\" >Cura\u00e7ao</th>\n      <th id=\"T_3bf61_level1_col20\" class=\"col_heading level1 col20\" >Netherlands</th>\n      <th id=\"T_3bf61_level1_col21\" class=\"col_heading level1 col21\" >Sweden</th>\n      <th id=\"T_3bf61_level1_col22\" class=\"col_heading level1 col22\" >Japan</th>\n      <th id=\"T_3bf61_level1_col23\" class=\"col_heading level1 col23\" >Tunisia</th>\n      <th id=\"T_3bf61_level1_col24\" class=\"col_heading level1 col24\" >Belgium</th>\n      <th id=\"T_3bf61_level1_col25\" class=\"col_heading level1 col25\" >Iran</th>\n      <th id=\"T_3bf61_level1_col26\" class=\"col_heading level1 col26\" >New Zealand</th>\n      <th id=\"T_3bf61_level1_col27\" class=\"col_heading level1 col27\" >Egypt</th>\n      <th id=\"T_3bf61_level1_col28\" class=\"col_heading level1 col28\" >Spain</th>\n      <th id=\"T_3bf61_level1_col29\" class=\"col_heading level1 col29\" >Saudi Arabia</th>\n      <th id=\"T_3bf61_level1_col30\" class=\"col_heading level1 col30\" >Uruguay</th>\n      <th id=\"T_3bf61_level1_col31\" class=\"col_heading level1 col31\" >Cape Verde</th>\n      <th id=\"T_3bf61_level1_col32\" class=\"col_heading level1 col32\" >France</th>\n      <th id=\"T_3bf61_level1_col33\" class=\"col_heading level1 col33\" >Senegal</th>\n      <th id=\"T_3bf61_level1_col34\" class=\"col_heading level1 col34\" >Norway</th>\n      <th id=\"T_3bf61_level1_col35\" class=\"col_heading level1 col35\" >Iraq</th>\n      <th id=\"T_3bf61_level1_col36\" class=\"col_heading level1 col36\" >Argentina</th>\n      <th id=\"T_3bf61_level1_col37\" class=\"col_heading level1 col37\" >Austria</th>\n      <th id=\"T_3bf61_level1_col38\" class=\"col_heading level1 col38\" >Algeria</th>\n      <th id=\"T_3bf61_level1_col39\" class=\"col_heading level1 col39\" >Jordan</th>\n      <th id=\"T_3bf61_level1_col40\" class=\"col_heading level1 col40\" >Colombia</th>\n      <th id=\"T_3bf61_level1_col41\" class=\"col_heading level1 col41\" >Portugal</th>\n      <th id=\"T_3bf61_level1_col42\" class=\"col_heading level1 col42\" >Uzbekistan</th>\n      <th id=\"T_3bf61_level1_col43\" class=\"col_heading level1 col43\" >DR Congo</th>\n      <th id=\"T_3bf61_level1_col44\" class=\"col_heading level1 col44\" >Croatia</th>\n      <th id=\"T_3bf61_level1_col45\" class=\"col_heading level1 col45\" >England</th>\n      <th id=\"T_3bf61_level1_col46\" class=\"col_heading level1 col46\" >Panama</th>\n      <th id=\"T_3bf61_level1_col47\" class=\"col_heading level1 col47\" >Ghana</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th id=\"T_3bf61_level0_row0\" class=\"row_heading level0 row0\" >1st %</th>\n      <td id=\"T_3bf61_row0_col0\" class=\"data row0 col0\" >40.0%</td>\n      <td id=\"T_3bf61_row0_col1\" class=\"data row0 col1\" >40.0%</td>\n      <td id=\"T_3bf61_row0_col2\" class=\"data row0 col2\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col3\" class=\"data row0 col3\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col4\" class=\"data row0 col4\" >60.0%</td>\n      <td id=\"T_3bf61_row0_col5\" class=\"data row0 col5\" >40.0%</td>\n      <td id=\"T_3bf61_row0_col6\" class=\"data row0 col6\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col7\" class=\"data row0 col7\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col8\" class=\"data row0 col8\" >60.0%</td>\n      <td id=\"T_3bf61_row0_col9\" class=\"data row0 col9\" >40.0%</td>\n      <td id=\"T_3bf61_row0_col10\" class=\"data row0 col10\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col11\" class=\"data row0 col11\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col12\" class=\"data row0 col12\" >60.0%</td>\n      <td id=\"T_3bf61_row0_col13\" class=\"data row0 col13\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col14\" class=\"data row0 col14\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col15\" class=\"data row0 col15\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col16\" class=\"data row0 col16\" >60.0%</td>\n      <td id=\"T_3bf61_row0_col17\" class=\"data row0 col17\" >40.0%</td>\n      <td id=\"T_3bf61_row0_col18\" class=\"data row0 col18\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col19\" class=\"data row0 col19\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col20\" class=\"data row0 col20\" >60.0%</td>\n      <td id=\"T_3bf61_row0_col21\" class=\"data row0 col21\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col22\" class=\"data row0 col22\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col23\" class=\"data row0 col23\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col24\" class=\"data row0 col24\" >80.0%</td>\n      <td id=\"T_3bf61_row0_col25\" class=\"data row0 col25\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col26\" class=\"data row0 col26\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col27\" class=\"data row0 col27\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col28\" class=\"data row0 col28\" >80.0%</td>\n      <td id=\"T_3bf61_row0_col29\" class=\"data row0 col29\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col30\" class=\"data row0 col30\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col31\" class=\"data row0 col31\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col32\" class=\"data row0 col32\" >80.0%</td>\n      <td id=\"T_3bf61_row0_col33\" class=\"data row0 col33\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col34\" class=\"data row0 col34\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col35\" class=\"data row0 col35\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col36\" class=\"data row0 col36\" >80.0%</td>\n      <td id=\"T_3bf61_row0_col37\" class=\"data row0 col37\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col38\" class=\"data row0 col38\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col39\" class=\"data row0 col39\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col40\" class=\"data row0 col40\" >60.0%</td>\n      <td id=\"T_3bf61_row0_col41\" class=\"data row0 col41\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col42\" class=\"data row0 col42\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col43\" class=\"data row0 col43\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col44\" class=\"data row0 col44\" >80.0%</td>\n      <td id=\"T_3bf61_row0_col45\" class=\"data row0 col45\" >20.0%</td>\n      <td id=\"T_3bf61_row0_col46\" class=\"data row0 col46\" >0.0%</td>\n      <td id=\"T_3bf61_row0_col47\" class=\"data row0 col47\" >0.0%</td>\n    </tr>\n    <tr>\n      <th id=\"T_3bf61_level0_row1\" class=\"row_heading level0 row1\" >2nd %</th>\n      <td id=\"T_3bf61_row1_col0\" class=\"data row1 col0\" >41.0%</td>\n      <td id=\"T_3bf61_row1_col1\" class=\"data row1 col1\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col2\" class=\"data row1 col2\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col3\" class=\"data row1 col3\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col4\" class=\"data row1 col4\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col5\" class=\"data row1 col5\" >60.0%</td>\n      <td id=\"T_3bf61_row1_col6\" class=\"data row1 col6\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col7\" class=\"data row1 col7\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col8\" class=\"data row1 col8\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col9\" class=\"data row1 col9\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col10\" class=\"data row1 col10\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col11\" class=\"data row1 col11\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col12\" class=\"data row1 col12\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col13\" class=\"data row1 col13\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col14\" class=\"data row1 col14\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col15\" class=\"data row1 col15\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col16\" class=\"data row1 col16\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col17\" class=\"data row1 col17\" >60.0%</td>\n      <td id=\"T_3bf61_row1_col18\" class=\"data row1 col18\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col19\" class=\"data row1 col19\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col20\" class=\"data row1 col20\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col21\" class=\"data row1 col21\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col22\" class=\"data row1 col22\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col23\" class=\"data row1 col23\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col24\" class=\"data row1 col24\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col25\" class=\"data row1 col25\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col26\" class=\"data row1 col26\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col27\" class=\"data row1 col27\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col28\" class=\"data row1 col28\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col29\" class=\"data row1 col29\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col30\" class=\"data row1 col30\" >80.0%</td>\n      <td id=\"T_3bf61_row1_col31\" class=\"data row1 col31\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col32\" class=\"data row1 col32\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col33\" class=\"data row1 col33\" >60.0%</td>\n      <td id=\"T_3bf61_row1_col34\" class=\"data row1 col34\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col35\" class=\"data row1 col35\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col36\" class=\"data row1 col36\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col37\" class=\"data row1 col37\" >60.0%</td>\n      <td id=\"T_3bf61_row1_col38\" class=\"data row1 col38\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col39\" class=\"data row1 col39\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col40\" class=\"data row1 col40\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col41\" class=\"data row1 col41\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col42\" class=\"data row1 col42\" >0.0%</td>\n      <td id=\"T_3bf61_row1_col43\" class=\"data row1 col43\" >40.0%</td>\n      <td id=\"T_3bf61_row1_col44\" class=\"data row1 col44\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col45\" class=\"data row1 col45\" >20.0%</td>\n      <td id=\"T_3bf61_row1_col46\" class=\"data row1 col46\" >60.0%</td>\n      <td id=\"T_3bf61_row1_col47\" class=\"data row1 col47\" >0.0%</td>\n    </tr>\n    <tr>\n      <th id=\"T_3bf61_level0_row2\" class=\"row_heading level0 row2\" >3rd %</th>\n      <td id=\"T_3bf61_row2_col0\" class=\"data row2 col0\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col1\" class=\"data row2 col1\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col2\" class=\"data row2 col2\" >60.0%</td>\n      <td id=\"T_3bf61_row2_col3\" class=\"data row2 col3\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col4\" class=\"data row2 col4\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col5\" class=\"data row2 col5\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col6\" class=\"data row2 col6\" >40.0%</td>\n      <td id=\"T_3bf61_row2_col7\" class=\"data row2 col7\" >60.0%</td>\n      <td id=\"T_3bf61_row2_col8\" class=\"data row2 col8\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col9\" class=\"data row2 col9\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col10\" class=\"data row2 col10\" >60.0%</td>\n      <td id=\"T_3bf61_row2_col11\" class=\"data row2 col11\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col12\" class=\"data row2 col12\" >40.0%</td>\n      <td id=\"T_3bf61_row2_col13\" class=\"data row2 col13\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col14\" class=\"data row2 col14\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col15\" class=\"data row2 col15\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col16\" class=\"data row2 col16\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col17\" class=\"data row2 col17\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col18\" class=\"data row2 col18\" >100.0%</td>\n      <td id=\"T_3bf61_row2_col19\" class=\"data row2 col19\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col20\" class=\"data row2 col20\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col21\" class=\"data row2 col21\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col22\" class=\"data row2 col22\" >60.0%</td>\n      <td id=\"T_3bf61_row2_col23\" class=\"data row2 col23\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col24\" class=\"data row2 col24\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col25\" class=\"data row2 col25\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col26\" class=\"data row2 col26\" >40.0%</td>\n      <td id=\"T_3bf61_row2_col27\" class=\"data row2 col27\" >40.0%</td>\n      <td id=\"T_3bf61_row2_col28\" class=\"data row2 col28\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col29\" class=\"data row2 col29\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col30\" class=\"data row2 col30\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col31\" class=\"data row2 col31\" >40.0%</td>\n      <td id=\"T_3bf61_row2_col32\" class=\"data row2 col32\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col33\" class=\"data row2 col33\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col34\" class=\"data row2 col34\" >40.0%</td>\n      <td id=\"T_3bf61_row2_col35\" class=\"data row2 col35\" >60.0%</td>\n      <td id=\"T_3bf61_row2_col36\" class=\"data row2 col36\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col37\" class=\"data row2 col37\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col38\" class=\"data row2 col38\" >60.0%</td>\n      <td id=\"T_3bf61_row2_col39\" class=\"data row2 col39\" >40.0%</td>\n      <td id=\"T_3bf61_row2_col40\" class=\"data row2 col40\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col41\" class=\"data row2 col41\" >40.0%</td>\n      <td id=\"T_3bf61_row2_col42\" class=\"data row2 col42\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col43\" class=\"data row2 col43\" >20.0%</td>\n      <td id=\"T_3bf61_row2_col44\" class=\"data row2 col44\" >0.0%</td>\n      <td id=\"T_3bf61_row2_col45\" class=\"data row2 col45\" >60.0%</td>\n      <td id=\"T_3bf61_row2_col46\" class=\"data row2 col46\" >40.0%</td>\n      <td id=\"T_3bf61_row2_col47\" class=\"data row2 col47\" >0.0%</td>\n    </tr>\n    <tr>\n      <th id=\"T_3bf61_level0_row3\" class=\"row_heading level0 row3\" >4th %</th>\n      <td id=\"T_3bf61_row3_col0\" class=\"data row3 col0\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col1\" class=\"data row3 col1\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col2\" class=\"data row3 col2\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col3\" class=\"data row3 col3\" >100.0%</td>\n      <td id=\"T_3bf61_row3_col4\" class=\"data row3 col4\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col5\" class=\"data row3 col5\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col6\" class=\"data row3 col6\" >60.0%</td>\n      <td id=\"T_3bf61_row3_col7\" class=\"data row3 col7\" >40.0%</td>\n      <td id=\"T_3bf61_row3_col8\" class=\"data row3 col8\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col9\" class=\"data row3 col9\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col10\" class=\"data row3 col10\" >20.0%</td>\n      <td id=\"T_3bf61_row3_col11\" class=\"data row3 col11\" >80.0%</td>\n      <td id=\"T_3bf61_row3_col12\" class=\"data row3 col12\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col13\" class=\"data row3 col13\" >20.0%</td>\n      <td id=\"T_3bf61_row3_col14\" class=\"data row3 col14\" >40.0%</td>\n      <td id=\"T_3bf61_row3_col15\" class=\"data row3 col15\" >40.0%</td>\n      <td id=\"T_3bf61_row3_col16\" class=\"data row3 col16\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col17\" class=\"data row3 col17\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col18\" class=\"data row3 col18\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col19\" class=\"data row3 col19\" >100.0%</td>\n      <td id=\"T_3bf61_row3_col20\" class=\"data row3 col20\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col21\" class=\"data row3 col21\" >40.0%</td>\n      <td id=\"T_3bf61_row3_col22\" class=\"data row3 col22\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col23\" class=\"data row3 col23\" >60.0%</td>\n      <td id=\"T_3bf61_row3_col24\" class=\"data row3 col24\" >20.0%</td>\n      <td id=\"T_3bf61_row3_col25\" class=\"data row3 col25\" >20.0%</td>\n      <td id=\"T_3bf61_row3_col26\" class=\"data row3 col26\" >20.0%</td>\n      <td id=\"T_3bf61_row3_col27\" class=\"data row3 col27\" >40.0%</td>\n      <td id=\"T_3bf61_row3_col28\" class=\"data row3 col28\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col29\" class=\"data row3 col29\" >40.0%</td>\n      <td id=\"T_3bf61_row3_col30\" class=\"data row3 col30\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col31\" class=\"data row3 col31\" >60.0%</td>\n      <td id=\"T_3bf61_row3_col32\" class=\"data row3 col32\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col33\" class=\"data row3 col33\" >20.0%</td>\n      <td id=\"T_3bf61_row3_col34\" class=\"data row3 col34\" >40.0%</td>\n      <td id=\"T_3bf61_row3_col35\" class=\"data row3 col35\" >40.0%</td>\n      <td id=\"T_3bf61_row3_col36\" class=\"data row3 col36\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col37\" class=\"data row3 col37\" >20.0%</td>\n      <td id=\"T_3bf61_row3_col38\" class=\"data row3 col38\" >20.0%</td>\n      <td id=\"T_3bf61_row3_col39\" class=\"data row3 col39\" >60.0%</td>\n      <td id=\"T_3bf61_row3_col40\" class=\"data row3 col40\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col41\" class=\"data row3 col41\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col42\" class=\"data row3 col42\" >60.0%</td>\n      <td id=\"T_3bf61_row3_col43\" class=\"data row3 col43\" >40.0%</td>\n      <td id=\"T_3bf61_row3_col44\" class=\"data row3 col44\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col45\" class=\"data row3 col45\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col46\" class=\"data row3 col46\" >0.0%</td>\n      <td id=\"T_3bf61_row3_col47\" class=\"data row3 col47\" >100.0%</td>\n    </tr>\n  </tbody>\n</table>\n";
+    let teams = RAW_DATA.teams;
+    let matches = RAW_DATA.matches;
+
+    function parseCSV(text) {
+      return Papa.parse(text.trim(), { header: true, skipEmptyLines: true }).data;
+    }
+
+    function safeNumber(value) {
+      const num = parseFloat((value || '').toString().replace('%', '').trim());
+      return Number.isFinite(num) ? num : 0;
+    }
+
+    function slugify(value) {
+      return (value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
+
+    function flagEmoji(teamName) {
+      const flags = { 'Algeria': 'DZ', 'Argentina': 'AR', 'Australia': 'AU', 'Austria': 'AT', 'Belgium': 'BE', 'Bosnia and Herzegovina': 'BA', 'Brazil': 'BR', 'Canada': 'CA', 'Cape Verde': 'CV', 'Colombia': 'CO', 'Croatia': 'HR', 'Curaçao': 'CW', 'Czech Republic': 'CZ', 'DR Congo': 'CD', 'Ecuador': 'EC', 'Egypt': 'EG', 'England': 'GB', 'France': 'FR', 'Germany': 'DE', 'Ghana': 'GH', 'Haiti': 'HT', 'Iran': 'IR', 'Iraq': 'IQ', 'Ivory Coast': 'CI', 'Japan': 'JP', 'Jordan': 'JO', 'Mexico': 'MX', 'Morocco': 'MA', 'Netherlands': 'NL', 'New Zealand': 'NZ', 'Norway': 'NO', 'Panama': 'PA', 'Paraguay': 'PY', 'Portugal': 'PT', 'Qatar': 'QA', 'Saudi Arabia': 'SA', 'Scotland': 'GB', 'Senegal': 'SN', 'South Africa': 'ZA', 'South Korea': 'KR', 'Spain': 'ES', 'Sweden': 'SE', 'Switzerland': 'CH', 'Tunisia': 'TN', 'Turkey': 'TR', 'United States': 'US', 'Uruguay': 'UY', 'Uzbekistan': 'UZ' };
+      const code = flags[teamName];
+      return code ? String.fromCharCode(0x1F1E6 + code.charCodeAt(0) - 65, 0x1F1E6 + code.charCodeAt(1) - 65) : '';
+    }
+
+    function teamCode(teamName) {
+      const codes = { 'Algeria': 'ALG', 'Argentina': 'ARG', 'Australia': 'AUS', 'Austria': 'AUT', 'Belgium': 'BEL', 'Bosnia and Herzegovina': 'BIH', 'Brazil': 'BRA', 'Canada': 'CAN', 'Cape Verde': 'CPV', 'Colombia': 'COL', 'Croatia': 'CRO', 'Curaçao': 'CUW', 'Czech Republic': 'CZE', 'DR Congo': 'COD', 'Ecuador': 'ECU', 'Egypt': 'EGY', 'England': 'ENG', 'France': 'FRA', 'Germany': 'GER', 'Ghana': 'GHA', 'Haiti': 'HAI', 'Iran': 'IRN', 'Iraq': 'IRQ', 'Ivory Coast': 'CIV', 'Japan': 'JPN', 'Jordan': 'JOR', 'Mexico': 'MEX', 'Morocco': 'MAR', 'Netherlands': 'NED', 'New Zealand': 'NZL', 'Norway': 'NOR', 'Panama': 'PAN', 'Paraguay': 'PAR', 'Portugal': 'POR', 'Qatar': 'QAT', 'Saudi Arabia': 'KSA', 'Scotland': 'SCO', 'Senegal': 'SEN', 'South Africa': 'RSA', 'South Korea': 'KOR', 'Spain': 'ESP', 'Sweden': 'SWE', 'Switzerland': 'SUI', 'Tunisia': 'TUN', 'Turkey': 'TUR', 'United States': 'USA', 'Uruguay': 'URU', 'Uzbekistan': 'UZB' };
+      return codes[teamName] || '';
+    }
+
+    function parseScoreCell(cell) {
+      if (!cell) return null;
+      const score = cell.split(' (')[0].trim();
+      const match = cell.match(/\(([^\)]+)\)/);
+      const prob = match ? safeNumber(match[1]) : null;
+      return score ? { score, prob } : null;
+    }
+
+function parseMatchPair(text) {
+      const parts = text.split(' vs ');
+      return { teamA: parts[0]?.trim() || '', teamB: parts[1]?.trim() || '' };
+    }
+
+    function loadTeamsFromCsv(rows) {
+      return rows.map(row => ({
+        name: row.Team?.trim() || '',
+        slug: slugify(row.Team || ''),
+        flag: flagEmoji(row.Team || ''),
+        code: teamCode(row.Team || ''),
+        qualifiedR32: safeNumber(row['Qualified for R32 %']),
+        qualifiedR16: safeNumber(row['Qualified for R16 %']),
+        qualifiedQF: safeNumber(row['Qualified for QF %']),
+        qualifiedSF: safeNumber(row['Qualified for SF %']),
+        qualifiedFinal: safeNumber(row['Qualified for Final %']),
+        winner: safeNumber(row['World Cup winner %'])
+      }));
+    }
+
+    function loadMatchesFromCsv(rows, results, teamMap) {
+      const resultsByPair = new Map();
+      results.forEach(row => {
+        const home = row['Home Team']?.trim() || '';
+        const away = row['Away Team']?.trim() || '';
+        const key = `${home}|${away}`;
+        resultsByPair.set(key, {
+          date: row.Date?.trim() || '',
+          location: [row['City ']?.trim(), row.Country?.trim()].filter(Boolean).join(', ')
+        });
+      });
+      return rows.map(row => {
+        const pair = parseMatchPair(row.match || '');
+        const result = resultsByPair.get(`${pair.teamA}|${pair.teamB}`) || resultsByPair.get(`${pair.teamB}|${pair.teamA}`) || { date: '', location: '' };
+        const teamAData = teamMap.get(pair.teamA) || { flag: '', code: '' };
+        const teamBData = teamMap.get(pair.teamB) || { flag: '', code: '' };
+        return {
+          teamA: pair.teamA,
+          teamB: pair.teamB,
+          pA: safeNumber(row['P(first win)']),
+          pDraw: safeNumber(row['P(draw)']),
+          pB: safeNumber(row['P(second win)']),
+          topScores: ['Top 1 score', 'Top 2 score', 'Top 3 score', 'Top 4 score', 'Top 5 score','Top 6 score', 'Top 7 score', 'Top 8 score', 'Top 9 score', 'Top 10 score']
+            .map(key => parseScoreCell(row[key]))
+            .filter(Boolean),
+          date: result.date,
+          location: result.location,
+          flagA: teamAData.flag,
+          flagB: teamBData.flag,
+          codeA: teamAData.code,
+          codeB: teamBData.code
+        };
+      });
+    }
+
+    async function fetchText(url) {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Unable to fetch ${url}: ${response.status}`);
+      }
+      return response.text();
+    }
+
+    async function loadRemoteData() {
+      try {
+        const [matchesText, probText, resultsText, groupTablesText] = await Promise.all([
+          fetchText('group_matches.csv'),
+          fetchText('world_cup_probabilities.csv'),
+          fetchText('results.csv'),
+          fetchText('group_tables.html')
+        ]);
+        const teamRows = parseCSV(probText);
+        const resultRows = parseCSV(resultsText);
+        const matchRows = parseCSV(matchesText);
+        const loadedTeams = loadTeamsFromCsv(teamRows);
+        const teamMap = new Map(loadedTeams.map(team => [team.name, team]));
+        const loadedMatches = loadMatchesFromCsv(matchRows, resultRows, teamMap);
+        GROUP_TABLE_HTML = groupTablesText;
+        return { teams: loadedTeams, matches: loadedMatches };
+      } catch (error) {
+        console.warn('Could not load CSV data, using embedded fallback data.', error);
+        return { teams: RAW_DATA.teams, matches: RAW_DATA.matches };
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const loaded = await loadRemoteData();
+      teams = loaded.teams;
+      matches = loaded.matches;
+      renderOverviewCards();
+      renderStageCharts();
+      renderGroupTabs();
+      renderMatchTable();
+      renderGroupTablePortion(selectedGroup);
+      populateTeamSelector();
+    });
+
+    const panelButtons = document.querySelectorAll('.tab-button');
+    panelButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        panelButtons.forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+        document.querySelectorAll('.panel').forEach(panel => panel.classList.remove('active'));
+        document.getElementById(button.dataset.panel).classList.add('active');
+      });
+    });
+
+    function formatTeamLabel(code, flag, name, compact = false) {
+      return name.trim();
+    }
+
+    function renderOverviewCards() {
+      const bestFinal = [...teams].sort((a,b)=>b.qualifiedFinal-a.qualifiedFinal)[0];
+      const bestWinner = [...teams].sort((a,b)=>b.winner-a.winner)[0];
+      const bestSF = [...teams].sort((a,b)=>b.qualifiedSF-a.qualifiedSF)[0];
+      document.getElementById('top-finalist').textContent = `${formatTeamLabel(bestFinal.code, bestFinal.flag, bestFinal.name)} ${bestFinal.qualifiedFinal.toFixed(1)}%`;
+      document.getElementById('top-winner').textContent = `${formatTeamLabel(bestWinner.code, bestWinner.flag, bestWinner.name)} ${bestWinner.winner.toFixed(1)}%`;
+      document.getElementById('top-sf').textContent = `${formatTeamLabel(bestSF.code, bestSF.flag, bestSF.name)} ${bestSF.qualifiedSF.toFixed(1)}%`;
+    }
+
+    const STAGE_KEYS = {
+      'R32': { key: 'qualifiedR32', label: 'Round of 32', color: '#38bdf8' },
+      'R16': { key: 'qualifiedR16', label: 'Round of 16', color: '#8b5cf6' },
+      'QF': { key: 'qualifiedQF', label: 'Quarterfinals', color: '#14b8a6' },
+      'SF': { key: 'qualifiedSF', label: 'Semifinals', color: '#f97316' },
+      'Final': { key: 'qualifiedFinal', label: 'Final', color: '#0ea5e9' },
+      'Winner': { key: 'winner', label: 'World Cup winner', color: '#22c55e' }
+    };
+    let selectedStage = 'Final';
+
+    function renderStageTabs() {
+      const container = document.getElementById('stage-tabs');
+      container.innerHTML = Object.keys(STAGE_KEYS).map(stage => ` <button class='stage-tab${stage === selectedStage ? ' active' : ''}' data-stage='${stage}'>${stage}</button>`).join('');
+      container.querySelectorAll('.stage-tab').forEach(button => {
+        button.addEventListener('click', () => {
+          selectedStage = button.dataset.stage;
+          renderStageTabs();
+          renderStageChart();
+        });
+      });
+    }
+
+    function renderStageChart() {
+      const sortedTeams = [...teams].sort((a,b)=>b.qualifiedFinal-a.qualifiedFinal);
+      const names = sortedTeams.map(t=>t.name);
+      const stage = STAGE_KEYS[selectedStage];
+      const values = sortedTeams.map(t => t[stage.key]);
+      Plotly.newPlot('stage-chart', [{ x: names, y: values, type: 'bar', marker: { color: stage.color } }], {
+        margin:{t:40,r:20,l:60,b:160},
+        plot_bgcolor:'#0f172a',
+        paper_bgcolor:'#0f172a',
+        font:{color:'#e2e8f0'},
+        xaxis:{tickangle:-45,automargin:true},
+        yaxis:{title:'Probability (%)'},
+        title:{text:stage.label, font:{size:18}}
+      });
+    }
+
+    function renderStageCharts() {
+      renderStageTabs();
+      renderStageChart();
+    }
+
+    const GROUPS = {
+      'A': ["Mexico", "South Africa", "South Korea", "Czech Republic"],
+      'B': ["Canada", "Bosnia and Herzegovina", "Qatar", "Switzerland"],
+      'C': ["Brazil", "Morocco", "Haiti", "Scotland"],
+      'D': ["United States", "Paraguay", "Australia", "Turkey"],
+      'E': ["Germany", "Curaçao", "Ivory Coast", "Ecuador"],
+      'F': ["Netherlands", "Japan", "Sweden", "Tunisia"],
+      'G': ["Belgium", "Egypt", "Iran", "New Zealand"],
+      'H': ["Spain", "Cape Verde", "Saudi Arabia", "Uruguay"],
+      'I': ["France", "Senegal", "Iraq", "Norway"],
+      'J': ["Argentina", "Algeria", "Austria", "Jordan"],
+      'K': ["Portugal", "DR Congo", "Uzbekistan", "Colombia"],
+      'L': ["England", "Croatia", "Ghana", "Panama"]
+    };
+    let selectedGroup = 'A';
+
+    function renderGroupTabs() {
+      const container = document.getElementById('group-tabs');
+      container.innerHTML = Object.keys(GROUPS).map(group => ` <button class='group-tab${group === selectedGroup ? ' active' : ''}' data-group='${group}'>Group ${group}</button>`).join('');
+      container.querySelectorAll('.group-tab').forEach(button => {
+        button.addEventListener('click', () => {
+          selectedGroup = button.dataset.group;
+          renderGroupTabs();
+          renderMatchTable();
+          renderGroupTablePortion(selectedGroup);
+        });
+      });
+    }
+
+    function getGroupMatches(group) {
+      const members = new Set(GROUPS[group] || []);
+      return matches.filter(match => members.has(match.teamA) && members.has(match.teamB));
+    }
+
+    function renderMatchTable() {
+      const container = document.getElementById('match-table');
+      const filteredMatches = getGroupMatches(selectedGroup).slice().sort((a, b) => {
+        if (!a.date || !b.date) return 0;
+        return new Date(a.date) - new Date(b.date);
+      });
+      const rows = filteredMatches.map(match => {
+        const topScores = match.topScores.slice(0,10).map(score => `<div>${score.score} (${score.prob.toFixed(1)}%)</div>`).join('');
+        const locationLine = match.date || match.location ? `<div class='mini-score'>${match.date}${match.date && match.location ? ' · ' : ''}${match.location || ''}</div>` : '';
+        const labelA = formatTeamLabel(match.codeA, match.flagA, match.teamA, true);
+        const labelB = formatTeamLabel(match.codeB, match.flagB, match.teamB, true);
+        return `<tr><td><span class='team-name'>${labelA}</span> vs <span class='team-name'>${labelB}</span>${locationLine}</td><td><div class='bar-row'><span class='bar-segment bar-win' style='width:${match.pA}%' title='${match.pA.toFixed(1)}%'></span><span class='bar-segment bar-draw' style='width:${match.pDraw}%' title='${match.pDraw.toFixed(1)}%'></span><span class='bar-segment bar-loss' style='width:${match.pB}%' title='${match.pB.toFixed(1)}%'></span></div><div class='mini-score'>${match.pA.toFixed(1)}% ${match.teamA} win · ${match.pDraw.toFixed(1)}% draw · ${match.pB.toFixed(1)}% ${match.teamB} win</div></td><td><div class='score-list'>${topScores}</div></td></tr>`;
+      }).join('');
+      if (!rows) {
+        container.innerHTML = `<div class='match-card'><h4>No matches found for Group ${selectedGroup}</h4></div>`;
+        return;
+      }
+      container.innerHTML = `<div class='group-match-heading'>Showing group ${selectedGroup} fixtures</div><table><thead><tr><th>Match</th><th>Outcome split</th><th>Top 5 predicted scores</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function renderGroupTablePortion(group, containerId = 'group-tables') {
+      const container = document.getElementById(containerId);
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(GROUP_TABLE_HTML, 'text/html');
+      const sourceTable = doc.querySelector('table');
+      if (!sourceTable) {
+        container.innerHTML = '';
+        return;
+      }
+      const groupIndex = Object.keys(GROUPS).indexOf(group);
+      if (groupIndex < 0) {
+        container.innerHTML = '';
+        return;
+      }
+      const start = 1 + groupIndex * 4;
+      const end = start + 3;
+      const portionTable = document.createElement('table');
+      const sourceHead = sourceTable.tHead;
+      if (sourceHead) {
+        const newHead = portionTable.createTHead();
+        Array.from(sourceHead.rows).forEach((row, rowIndex) => {
+          if (rowIndex === 0) {
+            return; // skip the top group label row
+          }
+          const newRow = row.cloneNode(false);
+          Array.from(row.children).forEach((cell, idx) => {
+            if (idx === 0 || (idx >= start && idx <= end)) {
+              newRow.appendChild(cell.cloneNode(true));
+            }
+          });
+          newHead.appendChild(newRow);
+        });
+      }
+      const sourceBody = sourceTable.tBodies[0];
+      const newBody = portionTable.createTBody();
+      if (sourceBody) {
+        Array.from(sourceBody.rows).forEach(row => {
+          const newRow = row.cloneNode(false);
+          Array.from(row.children).forEach((cell, idx) => {
+            if (idx === 0 || (idx >= start && idx <= end)) {
+              newRow.appendChild(cell.cloneNode(true));
+            }
+          });
+          newBody.appendChild(newRow);
+        });
+      }
+      container.innerHTML = `<div class='group-match-heading'>Group ${group} table</div>`;
+      container.appendChild(portionTable);
+    }
+
+    function renderTeamGroupTables(teamName) {
+      renderTeamGroupTable(teamName);
+    }
+
+    function populateTeamSelector() {
+      const select = document.getElementById('team-select');
+      select.innerHTML = teams.sort((a,b)=>a.name.localeCompare(b.name)).map(team => ` <option value='${team.slug}'>${team.name}</option>`).join('');
+      select.addEventListener('change', () => renderTeamDetail(select.value));
+      renderTeamDetail(select.value);
+    }
+
+    function renderTeamDetail(slug) {
+      const team = teams.find(t => t.slug === slug) || teams[0];
+      const cards = document.getElementById('team-cards');
+      cards.innerHTML = `
+        <div class='card summary-card'><h3>${team.name}</h3><strong>${team.qualifiedR32.toFixed(1)}%</strong><span>Round of 32</span></div>
+        <div class='card summary-card'><h3>Round of 16</h3><strong>${team.qualifiedR16.toFixed(1)}%</strong><span>Round of 16</span></div>
+        <div class='card summary-card'><h3>Quarterfinal</h3><strong>${team.qualifiedQF.toFixed(1)}%</strong><span>Quarterfinals</span></div>
+        <div class='card summary-card'><h3>Semifinal</h3><strong>${team.qualifiedSF.toFixed(1)}%</strong><span>Semifinals</span></div>
+        <div class='card summary-card'><h3>Final</h3><strong>${team.qualifiedFinal.toFixed(1)}%</strong><span>Final qualification</span></div>
+        <div class='card summary-card'><h3>Champion</h3><strong>${team.winner.toFixed(1)}%</strong><span>World Cup winner</span></div>
+      `;
+      renderTeamGroupTable(team.name);
+      Plotly.newPlot('team-stage-chart', [{ x:['R32','R16','QF','SF','Final','Winner'], y:[team.qualifiedR32,team.qualifiedR16,team.qualifiedQF,team.qualifiedSF,team.qualifiedFinal,team.winner], type:'bar', marker:{color:['#38bdf8','#8b5cf6','#22c55e','#f97316','#0ea5e9','#10b981']} }], { margin:{t:30,r:20,l:60,b:50}, plot_bgcolor:'#0f172a', paper_bgcolor:'#0f172a', font:{color:'#e2e8f0'}, yaxis:{title:'Probability (%)'} });
+      renderTeamMatches(team.name);
+      renderTeamGroupEloChart(team.name);
+      loadEloData(team.name);
+    }
+
+    function getTeamGroup(teamName) {
+      return Object.entries(GROUPS).find(([group, teams]) => teams.includes(teamName))?.[0] || '';
+    
+    }
+
+    function renderTeamGroupTable(teamName) {
+      const group = getTeamGroup(teamName);
+      console.log({ teamName, group });
+      if (group) {
+        renderGroupTablePortion(group, 'team-group-table');
+      } else {
+        const container = document.getElementById('team-group-table');
+        if (container) container.innerHTML = '';
+      }
+    }
+
+    function renderTeamMatches(teamName) {
+      const container = document.getElementById('team-matches');
+      const teamMatches = matches.filter(match => match.teamA === teamName || match.teamB === teamName);
+      container.innerHTML = teamMatches.map(match => {
+        const teamA = match.teamA;
+        const teamB = match.teamB;
+        const teamAProb =  match.pA;
+        const teamBProb = match.pB;
+        const drawProb = match.pDraw;
+        const title = `${formatTeamLabel(match.codeA, match.flagA, match.teamA, true)} vs ${formatTeamLabel(match.codeB, match.flagB, match.teamB, true)}`;
+        const topScores = match.topScores.slice(0,10).map(score => `<div>${score.score} (${score.prob.toFixed(1)}%)</div>`).join('');
+        const dateLine = match.date || match.location ? `<div class='mini-score'>${match.date}${match.date && match.location ? ' · ' : ''}${match.location || ''}</div>` : '';
+        return `
+          <div class="match-card">
+
+            <div class="match-details">
+              <div class="match-title">${title}</div>
+              <div class="match-meta">${dateLine}</div>
+            </div>
+
+            <div class="match-probability">
+              <div class="bar-row">
+                <span class="bar-segment bar-win" style="width:${teamAProb}%"></span>
+                <span class="bar-segment bar-draw" style="width:${drawProb}%"></span>
+                <span class="bar-segment bar-loss" style="width:${teamBProb}%"></span>
+              </div>
+
+              <div class="probability-text">
+                ${teamAProb.toFixed(1)}% ${match.teamA} win ·
+                ${drawProb.toFixed(1)}% draw ·
+                ${teamBProb.toFixed(1)}% ${match.teamB} win
+              </div>
+            </div>
+
+            <div class="scorelines">
+              ${topScores}
+            </div>
+
+          </div>
+        `;
+      }).join('');
+    }
+
+    let eloData = {};
+    let eloDates = [];
+
+    let selectedEloTeams = ['England', 'France'];
+
+
+    async function loadEloData(teamName) {
+      if (teamName === null) {
+        selectedEloTeams = ['England', 'France'];
+      }
+      else {
+        const group = getTeamGroup(teamName);
+        if (group) {
+          selectedEloTeams = GROUPS[group];
+        }
+      }
+
+      try {
+        const response = await fetch('elo_over_time.csv');
+        if (!response.ok) throw new Error('Failed to load ELO data');
+        const csv = await response.text();
+        const lines = csv.trim().split('\n');
+        
+        eloDates = lines[0].split(',').slice(1).map(d => d.trim());
+        const cutoffIndex = eloDates.findIndex(d => new Date(d).getFullYear() >= 1989);
+        eloDates = eloDates.slice(cutoffIndex);
+
+        Object.keys(eloData).forEach(team => {
+          eloData[team] = eloData[team].slice(cutoffIndex);
+        });
+
+        lines.slice(1).forEach(line => {
+              const values = line.split(',');
+              const teamName = values[0].trim();
+              const ratings = values.slice(1).map(v => parseFloat(v.trim()));
+              eloData[teamName] = ratings;
+      });
+        
+        renderAboutEloTeamSelector();
+        renderAboutEloChart();
+        renderAboutEloTeamSelector1();
+        renderAboutEloChart1();
+      } catch (error) {
+        console.warn('Could not load ELO data:', error);
+      }
+    }
+
+    function renderAboutEloTeamSelector() {
+      const container = document.getElementById('about-elo-team-selector');
+      const allTeams = Object.keys(eloData).sort();
+      
+      container.innerHTML = `
+        <div style='position: relative; width: 100%;'>
+          <input type='text' id='elo-search-input' placeholder='Search teams...' style='width: 100%; padding: 10px 12px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; font-size: 14px;' autocomplete='off'>
+          <div id='elo-search-results' style='position: absolute; top: 100%; left: 0; right: 0; background: #1e293b; border: 1px solid #334155; border-top: none; border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto; z-index: 10; display: none;'></div>
+        </div>
+        <div style='margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px;' id='elo-selected-teams'></div>
+      `;
+      
+      renderSelectedTeamPills();
+      setupSearchInput(allTeams);
+    }
+
+    function renderSelectedTeamPills() {
+      const container = document.getElementById('elo-selected-teams');
+      if (selectedEloTeams.length === 0) {
+        container.innerHTML = '<span style="color: #64748b; font-size: 14px;">No teams selected</span>';
+        return;
+      }
+      container.innerHTML = selectedEloTeams.map(team => `
+        <div style='display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg,#0ea5e9,#8b5cf6); color: #fff; padding: 6px 10px; border-radius: 999px; font-weight: 600; font-size: 14px;'>
+          ${team}
+          <button onclick="removeEloTeam('${team}')" style='background: none; border: none; color: #fff; cursor: pointer; font-weight: bold; padding: 0; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;'>×</button>
+        </div>
+      `).join('');
+    }
+
+    function setupSearchInput(allTeams) {
+      const input = document.getElementById('elo-search-input');
+      const resultsContainer = document.getElementById('elo-search-results');
+      
+      input.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        
+        if (query.length === 0) {
+          resultsContainer.style.display = 'none';
+          return;
+        }
+        
+        const matching = allTeams.filter(team => 
+          team.toLowerCase().includes(query) && !selectedEloTeams.includes(team)
+        );
+        
+        if (matching.length === 0) {
+          resultsContainer.innerHTML = '<div style="padding: 10px; color: #94a3b8; text-align: center;">No teams found</div>';
+          resultsContainer.style.display = 'block';
+          return;
+        }
+        
+        resultsContainer.innerHTML = matching.map(team => `
+          <div style='padding: 10px 12px; cursor: pointer; color: #cbd5e1; transition: background 0.2s; border-bottom: 1px solid #334155;' onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'" onclick="addEloTeam('${team}')">
+            ${team}
+          </div>
+        `).join('');
+        resultsContainer.style.display = 'block';
+      });
+      
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#about-elo-team-selector')) {
+          resultsContainer.style.display = 'none';
+        }
+      });
+    }
+
+    function addEloTeam(teamName) {
+      if (!selectedEloTeams.includes(teamName)) {
+        selectedEloTeams.push(teamName);
+      }
+      renderAboutEloTeamSelector();
+      renderAboutEloChart();
+    }
+
+    function removeEloTeam(teamName) {
+      selectedEloTeams = selectedEloTeams.filter(t => t !== teamName);
+      renderAboutEloTeamSelector();
+      renderAboutEloChart();
+    }
+    function removeEloTeam1(teamName) {
+      selectedEloTeams = selectedEloTeams.filter(t => t !== teamName);
+      renderAboutEloTeamSelector1();
+      renderAboutEloChart1();
+    }
+    function addEloTeam1(teamName) {
+      if (!selectedEloTeams.includes(teamName)) {
+        selectedEloTeams.push(teamName);
+      }
+      renderAboutEloTeamSelector1();
+      renderAboutEloChart1();
+    }
+
+    function renderAboutEloChart() {
+      const chartData = selectedEloTeams
+        .filter(team => eloData[team])
+        .map(team => {
+          const hue = Math.random() * 360;
+          return {
+            x: eloDates,
+            y: eloData[team],
+            name: team,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: `hsl(${hue}, 70%, 60%)`, width: 2 }
+          };
+        });
+
+      if (chartData.length === 0) {
+        document.getElementById('about-elo-chart').innerHTML = '<p style="text-align:center; padding: 40px; color: #94a3b8;">Select teams to display</p>';
+        return;
+      }
+
+      Plotly.newPlot('about-elo-chart', chartData, {
+        margin: { t: 30, r: 20, l: 60, b: 50 },
+        plot_bgcolor: '#0f172a',
+        paper_bgcolor: '#0f172a',
+        font: { color: '#e2e8f0' },
+        yaxis: { title: 'ELO Rating' },
+        xaxis: { title: 'Year' },
+        hovermode: 'x unified'
+      });
+    }
+
+    function renderTeamGroupEloChart(teamName) {
+      const group = getTeamGroup(teamName);
+      const groupTeams = GROUPS[group] || [];
+      
+      const chartData = groupTeams
+        .filter(team => eloData[team])
+        .map(team => {
+          const hue = Math.random() * 360;
+          return {
+            x: eloDates,
+            y: eloData[team],
+            name: team,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: `hsl(${hue}, 70%, 60%)`, width: 2 }
+          };
+        });
+
+      if (chartData.length === 0 || !document.getElementById('team-group-elo-chart')) {
+        return;
+      }
+
+      Plotly.newPlot('team-group-elo-chart', chartData, {
+        margin: { t: 30, r: 20, l: 60, b: 50 },
+        plot_bgcolor: '#0f172a',
+        paper_bgcolor: '#0f172a',
+        font: { color: '#e2e8f0' },
+        yaxis: { title: 'ELO Rating' },
+        xaxis: { title: 'Year' },
+        hovermode: 'x unified'
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderOverviewCards();
+      renderStageCharts();
+      renderGroupTabs();
+      renderMatchTable();
+      renderGroupTablePortion(selectedGroup);
+      populateTeamSelector();
+
+      loadEloData(null);
+    });
+
+    function renderAboutEloTeamSelector() {
+      const container = document.getElementById('about-elo-team-selector');
+      const allTeams = Object.keys(eloData).sort();
+      
+      container.innerHTML = `
+        <div style='position: relative; width: 100%;'>
+          <input type='text' id='elo-search-input' placeholder='Search teams...' style='width: 100%; padding: 10px 12px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; font-size: 14px;' autocomplete='off'>
+          <div id='elo-search-results' style='position: absolute; top: 100%; left: 0; right: 0; background: #1e293b; border: 1px solid #334155; border-top: none; border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto; z-index: 10; display: none;'></div>
+        </div>
+        <div style='margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px;' id='elo-selected-teams'></div>
+      `;
+      
+      renderSelectedTeamPills();
+      setupSearchInput(allTeams);
+    }
+
+    function renderSelectedTeamPills() {
+      const container = document.getElementById('elo-selected-teams');
+      if (selectedEloTeams.length === 0) {
+        container.innerHTML = '<span style="color: #64748b; font-size: 14px;">No teams selected</span>';
+        return;
+      }
+      container.innerHTML = selectedEloTeams.map(team => `
+        <div style='display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg,#0ea5e9,#8b5cf6); color: #fff; padding: 6px 10px; border-radius: 999px; font-weight: 600; font-size: 14px;'>
+          ${team}
+          <button onclick="removeEloTeam('${team}')" style='background: none; border: none; color: #fff; cursor: pointer; font-weight: bold; padding: 0; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;'>×</button>
+        </div>
+      `).join('');
+    }
+
+    function setupSearchInput(allTeams) {
+      const input = document.getElementById('elo-search-input');
+      const resultsContainer = document.getElementById('elo-search-results');
+      
+      input.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        
+        if (query.length === 0) {
+          resultsContainer.style.display = 'none';
+          return;
+        }
+        
+        const matching = allTeams.filter(team => 
+          team.toLowerCase().includes(query) && !selectedEloTeams.includes(team)
+        );
+        
+        if (matching.length === 0) {
+          resultsContainer.innerHTML = '<div style="padding: 10px; color: #94a3b8; text-align: center;">No teams found</div>';
+          resultsContainer.style.display = 'block';
+          return;
+        }
+        
+        resultsContainer.innerHTML = matching.map(team => `
+          <div style='padding: 10px 12px; cursor: pointer; color: #cbd5e1; transition: background 0.2s; border-bottom: 1px solid #334155;' onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'" onclick="addEloTeam('${team}')">
+            ${team}
+          </div>
+        `).join('');
+        resultsContainer.style.display = 'block';
+      });
+      
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#about-elo-team-selector')) {
+          resultsContainer.style.display = 'none';
+        }
+      });
+    }
+
+    function addEloTeam(teamName) {
+      if (!selectedEloTeams.includes(teamName)) {
+        selectedEloTeams.push(teamName);
+      }
+      renderAboutEloTeamSelector();
+      renderAboutEloChart();
+    }
+
+    function removeEloTeam(teamName) {
+      selectedEloTeams = selectedEloTeams.filter(t => t !== teamName);
+      renderAboutEloTeamSelector();
+      renderAboutEloChart();
+    }
+
+    function renderAboutEloChart() {
+      const chartData = selectedEloTeams
+        .filter(team => eloData[team])
+        .map(team => {
+          const hue = Math.random() * 360;
+          return {
+            x: eloDates,
+            y: eloData[team],
+            name: team,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: `hsl(${hue}, 70%, 60%)`, width: 2 }
+          };
+        });
+
+      if (chartData.length === 0) {
+        document.getElementById('about-elo-chart').innerHTML = '<p style="text-align:center; padding: 40px; color: #94a3b8;">Select teams to display</p>';
+        return;
+      }
+
+      Plotly.newPlot('about-elo-chart', chartData, {
+        margin: { t: 30, r: 20, l: 60, b: 50 },
+        plot_bgcolor: '#0f172a',
+        paper_bgcolor: '#0f172a',
+        font: { color: '#e2e8f0' },
+        yaxis: { title: 'ELO Rating' },
+        xaxis: { title: 'Year' },
+        hovermode: 'x unified'
+      });
+    }
+
+
+    function renderAboutEloChart1() {
+      const chartData = selectedEloTeams
+        .filter(team => eloData[team])
+        .map(team => {
+          const hue = Math.random() * 360;
+          return {
+            x: eloDates,
+            y: eloData[team],
+            name: team,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: `hsl(${hue}, 70%, 60%)`, width: 2 }
+          };
+        });
+
+      if (chartData.length === 0) {
+        document.getElementById('about-elo-chart1').innerHTML = '<p style="text-align:center; padding: 40px; color: #94a3b8;">Select teams to display</p>';
+        return;
+      }
+
+      Plotly.newPlot('about-elo-chart1', chartData, {
+        margin: { t: 30, r: 20, l: 60, b: 50 },
+        plot_bgcolor: '#0f172a',
+        paper_bgcolor: '#0f172a',
+        font: { color: '#e2e8f0' },
+        yaxis: { title: 'ELO Rating' },
+        xaxis: { title: 'Year' },
+        hovermode: 'x unified'
+      });
+    }
+
+
+    function renderAboutEloTeamSelector1() {
+      const container = document.getElementById('about-elo-team-selector1');
+      const allTeams = Object.keys(eloData).sort();
+      
+      container.innerHTML = `
+        <div style='position: relative; width: 100%;'>
+          <input type='text' id='elo-search-input1' placeholder='Search teams...' style='width: 100%; padding: 10px 12px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; font-size: 14px;' autocomplete='off'>
+          <div id='elo-search-results1' style='position: absolute; top: 100%; left: 0; right: 0; background: #1e293b; border: 1px solid #334155; border-top: none; border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto; z-index: 10; display: none;'></div>
+        </div>
+        <div style='margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px;' id='elo-selected-teams1'></div>
+      `;
+      
+      renderSelectedTeamPills1();
+      setupSearchInput1(allTeams);
+    }
+
+    function renderSelectedTeamPills1() {
+      const container = document.getElementById('elo-selected-teams1');
+      if (selectedEloTeams.length === 0) {
+        container.innerHTML = '<span style="color: #64748b; font-size: 14px;">No teams selected</span>';
+        return;
+      }
+      container.innerHTML = selectedEloTeams.map(team => `
+        <div style='display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg,#0ea5e9,#8b5cf6); color: #fff; padding: 6px 10px; border-radius: 999px; font-weight: 600; font-size: 14px;'>
+          ${team}
+          <button onclick="removeEloTeam1('${team}')" style='background: none; border: none; color: #fff; cursor: pointer; font-weight: bold; padding: 0; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;'>×</button>
+        </div>
+      `).join('');
+    }
+
+    function setupSearchInput1(allTeams) {
+      const input = document.getElementById('elo-search-input1');
+      const resultsContainer = document.getElementById('elo-search-results1');
+      
+      input.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        
+        if (query.length === 0) {
+          resultsContainer.style.display = 'none';
+          return;
+        }
+        
+        const matching = allTeams.filter(team => 
+          team.toLowerCase().includes(query) && !selectedEloTeams.includes(team)
+        );
+        
+        if (matching.length === 0) {
+          resultsContainer.innerHTML = '<div style="padding: 10px; color: #94a3b8; text-align: center;">No teams found</div>';
+          resultsContainer.style.display = 'block';
+          return;
+        }
+        
+        resultsContainer.innerHTML = matching.map(team => `
+          <div style='padding: 10px 12px; cursor: pointer; color: #cbd5e1; transition: background 0.2s; border-bottom: 1px solid #334155;' onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'" onclick="addEloTeam1('${team}')">
+            ${team}
+          </div>
+        `).join('');
+        resultsContainer.style.display = 'block';
+      });
+      
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#about-elo-team-selector1')) {
+          resultsContainer.style.display = 'none';
+        }
+      });
+    }
+
+
+
+    function renderTeamGroupEloChart1(teamName) {
+      const group = getTeamGroup(teamName);
+      const groupTeams = GROUPS[group] || [];
+      
+      const chartData = groupTeams
+        .filter(team => eloData[team])
+        .map(team => {
+          const hue = Math.random() * 360;
+          return {
+            x: eloDates,
+            y: eloData[team],
+            name: team,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: `hsl(${hue}, 70%, 60%)`, width: 2 }
+          };
+        });
+
+      if (chartData.length === 0 || !document.getElementById('team-group-elo-chart1')) {
+        return;
+      }
+
+      Plotly.newPlot('team-group-elo-chart1', chartData, {
+        margin: { t: 30, r: 20, l: 60, b: 50 },
+        plot_bgcolor: '#0f172a',
+        paper_bgcolor: '#0f172a',
+        font: { color: '#e2e8f0' },
+        yaxis: { title: 'ELO Rating' },
+        xaxis: { title: 'Year' },
+        hovermode: 'x unified'
+      });
+    }
+
+    
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderOverviewCards();
+      renderStageCharts();
+      renderGroupTabs();
+      renderMatchTable();
+      renderGroupTablePortion(selectedGroup);
+      populateTeamSelector();
+      renderTeamGroupEloChart1('null');
+    });
+
+
+
+
+  </script>
+</body>
+</html>
