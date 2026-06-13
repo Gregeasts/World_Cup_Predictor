@@ -91,6 +91,24 @@
       font-size: 1.5rem;
       color: #8ea7c8;
     }
+    .scoreline-btn {
+      margin-top: 8px;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .match-details {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+    }
+
+    .match-details h4 {
+      margin: 0 0 8px 0;
+    }
 
     .match-probability {
       width: 100%;
@@ -143,6 +161,24 @@
       font-size: 1.2rem;
       font-weight: 600;
     }
+    .betting-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    .betting-left {
+      min-width: 0;
+    }
+    .betting-right {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .betting-left h2 {
+      margin: 0 0 16px;
+      font-size: 1.5rem;
+      color: #f8fafc;
+    }
   </style>
 </head>
 <body>
@@ -156,6 +192,7 @@
     <div class="tabs">
       <button class="tab-button active" data-panel="overview">Overview</button>
       <button class="tab-button" data-panel="team-detail">Team Detail</button>
+      <button class="tab-button" data-panel="betting">Analysis of Results</button>
       <button class="tab-button" data-panel="about">About</button>
       <button class="tab-button" data-panel="curacao">Curaçao: The 1/250,000 2026 World Cup Win</button>
     </div>
@@ -270,6 +307,62 @@
 
         <div class="chart-box" style="margin-bottom: 32px;">
           <div id="about-elo-chart1" style="height:500px;"></div>
+        </div>
+      </div>
+    </div>
+    <div id="betting" class="panel">
+      <div class="betting-layout">
+        <div class="betting-left">
+          <h2>Results</h2>
+          <div class="table-panel">
+            <table id="results-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Home Team</th>
+                  <th>Away Team</th>
+                  <th>City</th>
+                  <th>Country</th>
+                  <th>Score</th>
+                  <th>Correct Result</th>
+                  <th>Likelihood of Scoreline</th>
+                  <th>Profit/Loss</th>
+                </tr>
+              </thead>
+              <tbody id="results-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="betting-right">
+          <div class="chart-box">
+            <h3>Cumulative Profit/Loss Over Time</h3>
+            <div id="profit-loss-chart" style="height:300px;"></div>
+          </div>
+          <div class="chart-box">
+            <h3>% of Games Correct/Incorrect</h3>
+            <div id="correct-incorrect-chart" style="height:300px;"></div>
+          </div>
+          <div class="chart-box">
+            <h3>% Likelihood of Actual Scorelines</h3>
+            <div class="match-filter-row">
+              <label>Filter by team:</label>
+              <select id="scoreline-team-filter">
+                <option value="">All teams</option>
+              </select>
+              <label>Date range:</label>
+              <select id="scoreline-date-filter">
+                <option value="">All dates</option>
+                <option value="first5">First 5 games</option>
+                <option value="first10">First 10 games</option>
+                <option value="first20">First 20 games</option>
+              </select>
+            </div>
+            <div id="scoreline-likelihood-chart" style="height:300px;"></div>
+          </div>
+          <div class="chart-box">
+            <h3>Likelihood of Actual Scoreline (most likely =1st, least = 20th)</h3>
+            <div id="scoreline-rank-frequency-chart" style="height:300px;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -463,10 +556,17 @@ function parseMatchPair(text) {
       results.forEach(row => {
         const home = row['Home Team']?.trim() || '';
         const away = row['Away Team']?.trim() || '';
+        const results = row['Score']?.trim() || '';
+        console.log(`Mapping result for ${home} vs ${away}: ${results}`);
         const key = `${home}|${away}`;
         resultsByPair.set(key, {
           date: row.Date?.trim() || '',
-          location: [row['City ']?.trim(), row.Country?.trim()].filter(Boolean).join(', ')
+          location: [row['City ']?.trim(), row.Country?.trim()].filter(Boolean).join(', '),
+          score: results,
+          correctResult: row['Correct Result']?.trim() || '',
+          likelihood: row['Likelihood of Scoreline']?.trim() || '',
+          profitLoss: row['Profit/Loss']?.trim() || ''
+
         });
       });
       return rows.map(row => {
@@ -488,7 +588,12 @@ function parseMatchPair(text) {
           flagA: teamAData.flag,
           flagB: teamBData.flag,
           codeA: teamAData.code,
-          codeB: teamBData.code
+          codeB: teamBData.code,
+          score: result.score|| '',
+          likelihood: result.likelihood || '',
+          profitLoss: result.profitLoss || '',
+          correctResult: result.correctResult || ''
+
         };
       });
     }
@@ -516,10 +621,11 @@ function parseMatchPair(text) {
         const teamMap = new Map(loadedTeams.map(team => [team.name, team]));
         const loadedMatches = loadMatchesFromCsv(matchRows, resultRows, teamMap);
         GROUP_TABLE_HTML = groupTablesText;
-        return { teams: loadedTeams, matches: loadedMatches };
+        console.log(loadedMatches)
+        return { teams: loadedTeams, matches: loadedMatches, results: resultRows };
       } catch (error) {
         console.warn('Could not load CSV data, using embedded fallback data.', error);
-        return { teams: RAW_DATA.teams, matches: RAW_DATA.matches };
+        return { teams: RAW_DATA.teams, matches: RAW_DATA.matches, results: [] };
       }
     }
 
@@ -527,6 +633,7 @@ function parseMatchPair(text) {
       const loaded = await loadRemoteData();
       teams = loaded.teams;
       matches = loaded.matches;
+      window.resultsData = loaded.results;
       renderOverviewCards();
       renderStageCharts();
       renderGroupTabs();
@@ -542,6 +649,9 @@ function parseMatchPair(text) {
         button.classList.add('active');
         document.querySelectorAll('.panel').forEach(panel => panel.classList.remove('active'));
         document.getElementById(button.dataset.panel).classList.add('active');
+        if (button.dataset.panel === 'betting') {
+          renderBettingPanel();
+        }
       });
     });
 
@@ -629,6 +739,20 @@ function parseMatchPair(text) {
         });
       });
     }
+    function toggleMatchDetails(index) {
+      const details = document.getElementById(`details-${index}`);
+      const button = document.getElementById(`scoreline-btn-${index}`);
+
+      const isOpen = details.style.display !== 'none';
+
+      if (isOpen) {
+        details.style.display = 'none';
+        button.textContent = 'View Result';
+      } else {
+        details.style.display = 'block';
+        button.textContent = 'Close Result';
+      }
+    }
 
     function getGroupMatches(group) {
       const members = new Set(GROUPS[group] || []);
@@ -641,12 +765,121 @@ function parseMatchPair(text) {
         if (!a.date || !b.date) return 0;
         return new Date(a.date) - new Date(b.date);
       });
-      const rows = filteredMatches.map(match => {
-        const topScores = match.topScores.slice(0,10).map(score => `<div>${score.score} (${score.prob.toFixed(1)}%)</div>`).join('');
-        const locationLine = match.date || match.location ? `<div class='mini-score'>${match.date}${match.date && match.location ? ' · ' : ''}${match.location || ''}</div>` : '';
-        const labelA = formatTeamLabel(match.codeA, match.flagA, match.teamA, true);
-        const labelB = formatTeamLabel(match.codeB, match.flagB, match.teamB, true);
-        return `<tr><td><span class='team-name'>${labelA}</span> vs <span class='team-name'>${labelB}</span>${locationLine}</td><td><div class='bar-row'><span class='bar-segment bar-win' style='width:${match.pA}%' title='${match.pA.toFixed(1)}%'></span><span class='bar-segment bar-draw' style='width:${match.pDraw}%' title='${match.pDraw.toFixed(1)}%'></span><span class='bar-segment bar-loss' style='width:${match.pB}%' title='${match.pB.toFixed(1)}%'></span></div><div class='mini-score'>${match.pA.toFixed(1)}% ${match.teamA} win · ${match.pDraw.toFixed(1)}% draw · ${match.pB.toFixed(1)}% ${match.teamB} win</div></td><td><div class='score-list'>${topScores}</div></td></tr>`;
+      const rows = filteredMatches.map((match, index) => {
+        const topScores = match.topScores
+          .slice(0, 10)
+          .map(score => `<div>${score.score} (${score.prob.toFixed(1)}%)</div>`)
+          .join('');
+
+        const locationLine =
+          match.date || match.location
+            ? `<div class='mini-score'>${match.date}${match.date && match.location ? ' · ' : ''}${match.location || ''}</div>`
+            : '';
+
+        const labelA = formatTeamLabel(
+          match.codeA,
+          match.flagA,
+          match.teamA,
+          true
+        );
+
+        const labelB = formatTeamLabel(
+          match.codeB,
+          match.flagB,
+          match.teamB,
+          true
+        );
+        console.log('Rendering match:', match.teamA, 'vs', match.teamB, 'with score:', match );
+
+        return `
+          <tr>
+            <td>
+              <span class='team-name'>${labelA}</span>
+              vs
+              <span class='team-name'>${labelB}</span>
+
+              ${locationLine}
+
+              ${match.score !== 'TBC' ? `
+                <div style="margin-top:8px;">
+                <button
+                  id="scoreline-btn-${index}"
+                  class="scoreline-btn"
+                  onclick="toggleMatchDetails(${index})"
+                >
+                  View Result
+                </button>
+                </div>
+
+                <div
+                  id="details-${index}"
+                  class="match-details"
+                  style="display:none;"
+                >
+                  <h4>Match Result</h4>
+                 <div class="result-box">
+                    <div>
+                      <strong>Result:</strong> ${labelA} <strong>${match.score}</strong> ${labelB}
+                    </div>
+
+                    <div>
+                      <strong>W/L/D Prediction:</strong>
+                      ${match.correctResult ? 'Correct ✓' : 'Incorrect ✗'}
+                    </div>
+
+                    <div>
+                      <strong>Likelihood of Scoreline:</strong>
+                      ${typeof match.likelihood === 'number'
+                        ? match.likelihood.toFixed(2) + '%'
+                        : match.likelihood}
+                    </div>
+
+                    <div>
+                      <strong>P/L:</strong>
+                      <span style="color:${match.profitLoss >= 0 ? 'limegreen' : 'crimson'}; font-weight:600;">
+                        £${Number(match.profitLoss).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+            </td>
+
+            <td>
+              <div class='bar-row'>
+                <span
+                  class='bar-segment bar-win'
+                  style='width:${match.pA}%'
+                  title='${match.pA.toFixed(1)}%'
+                ></span>
+
+                <span
+                  class='bar-segment bar-draw'
+                  style='width:${match.pDraw}%'
+                  title='${match.pDraw.toFixed(1)}%'
+                ></span>
+
+                <span
+                  class='bar-segment bar-loss'
+                  style='width:${match.pB}%'
+                  title='${match.pB.toFixed(1)}%'
+                ></span>
+              </div>
+
+              <div class='mini-score'>
+                ${match.pA.toFixed(1)}% ${match.teamA} win ·
+                ${match.pDraw.toFixed(1)}% draw ·
+                ${match.pB.toFixed(1)}% ${match.teamB} win
+              </div>
+            </td>
+
+            <td>
+              <div class='score-list'>
+                ${topScores}
+              </div>
+            </td>
+          </tr>
+        `;
       }).join('');
       if (!rows) {
         container.innerHTML = `<div class='match-card'><h4>No matches found for Group ${selectedGroup}</h4></div>`;
@@ -1267,7 +1500,256 @@ function parseMatchPair(text) {
       renderTeamGroupEloChart1('null');
     });
 
+    function renderBettingPanel() {
+      const results = window.resultsData || [];
+      renderResultsTable(results);
+      renderProfitLossChart(results);
+      renderCorrectIncorrectChart(results);
+      renderScorelineLikelihoodChart(results);
+      renderScorelineRankFrequencyChart(results);
+    }
 
+    function renderResultsTable(results) {
+      const tbody = document.getElementById('results-table-body');
+      if (!tbody) return;
+      
+      const rows = results.map(row => {
+        const date = row.Date || '';
+        const homeTeam = row['Home Team'] || '';
+        const awayTeam = row['Away Team'] || '';
+        const city = row['City '] || '';
+        const country = row.Country || '';
+        const score = row.Score || '';
+        const correctResult = row['Correct Result'] || '';
+        const likelihood = row['Likelihood of Scoreline'] || '';
+        const profitLoss = row['Profit/Loss'] || '';
+        
+        const plValue = parseFloat(profitLoss);
+        const plDisplay = !isNaN(plValue) ? `£${plValue.toFixed(2)}` : profitLoss;
+        const plColor = !isNaN(plValue) ? (plValue >= 0 ? '#22c55e' : '#ef4444') : '#cbd5e1';
+        
+        return `
+          <tr>
+            <td>${date}</td>
+            <td>${homeTeam}</td>
+            <td>${awayTeam}</td>
+            <td>${city}</td>
+            <td>${country}</td>
+            <td>${score}</td>
+            <td>${correctResult}</td>
+            <td>${likelihood}</td>
+            <td style="color: ${plColor}; font-weight: 600;">${plDisplay}</td>
+          </tr>
+        `;
+      }).join('');
+      
+      tbody.innerHTML = rows;
+    }
+
+    function renderProfitLossChart(results) {
+      const container = document.getElementById('profit-loss-chart');
+      if (!container) return;
+      
+      const filteredResults = results.filter(row => {
+        const pl = row['Profit/Loss'];
+        return pl && pl !== 'TBC' && !isNaN(parseFloat(pl));
+      });
+      
+      const sortedResults = filteredResults.sort((a, b) => {
+        const dateA = new Date(a.Date);
+        const dateB = new Date(b.Date);
+        return dateA - dateB;
+      });
+      
+      const gameNumbers = sortedResults.map((_, index) => `Game ${index + 1}`);
+      const profitLoss = sortedResults.map(row => parseFloat(row['Profit/Loss']));
+      
+      let cumulative = 0;
+      const cumulativeProfitLoss = profitLoss.map(pl => {
+        cumulative += pl;
+        return cumulative;
+      });
+      
+      Plotly.newPlot(container, [{
+        x: gameNumbers,
+        y: cumulativeProfitLoss,
+        type: 'scatter',
+        mode: 'lines+markers',
+        line: { color: '#38bdf8', width: 2 },
+        marker: { color: '#38bdf8', size: 6 }
+      }], {
+        margin: { t: 30, r: 20, l: 60, b: 50 },
+        plot_bgcolor: '#0f172a',
+        paper_bgcolor: '#0f172a',
+        font: { color: '#e2e8f0' },
+        yaxis: { title: 'Cumulative Profit/Loss (£)' },
+        xaxis: { title: 'Game Number', tickangle: -45 }
+      });
+    }
+
+    function renderCorrectIncorrectChart(results) {
+      const container = document.getElementById('correct-incorrect-chart');
+      if (!container) return;
+      
+      const filteredResults = results.filter(row => {
+        const cr = row['Correct Result'];
+        return cr && cr !== 'TBC' && (cr === 'Yes' || cr === 'No');
+      });
+      
+      const correct = filteredResults.filter(row => row['Correct Result'] === 'Yes').length;
+      const incorrect = filteredResults.filter(row => row['Correct Result'] === 'No').length;
+      const total = correct + incorrect;
+      
+      const correctPercent = total > 0 ? (correct / total * 100).toFixed(1) : 0;
+      const incorrectPercent = total > 0 ? (incorrect / total * 100).toFixed(1) : 0;
+      
+      Plotly.newPlot(container, [{
+        x: ['Correct', 'Incorrect'],
+        y: [correctPercent, incorrectPercent],
+        type: 'bar',
+        marker: { color: ['#22c55e', '#ef4444'] }
+      }], {
+        margin: { t: 30, r: 20, l: 60, b: 50 },
+        plot_bgcolor: '#0f172a',
+        paper_bgcolor: '#0f172a',
+        font: { color: '#e2e8f0' },
+        yaxis: { title: 'Percentage (%)', range: [0, 100] }
+      });
+    }
+
+    function renderScorelineLikelihoodChart(results) {
+      const container = document.getElementById('scoreline-likelihood-chart');
+      if (!container) return;
+      
+      const teamFilter = document.getElementById('scoreline-team-filter');
+      const dateFilter = document.getElementById('scoreline-date-filter');
+      
+      // Populate team filter
+      if (teamFilter && teamFilter.options.length === 1) {
+        const allTeams = new Set();
+        results.forEach(row => {
+          allTeams.add(row['Home Team']);
+          allTeams.add(row['Away Team']);
+        });
+        allTeams.forEach(team => {
+          const option = document.createElement('option');
+          option.value = team;
+          option.textContent = team;
+          teamFilter.appendChild(option);
+        });
+        
+        teamFilter.addEventListener('change', () => renderScorelineLikelihoodChart(results));
+        dateFilter.addEventListener('change', () => renderScorelineLikelihoodChart(results));
+      }
+      
+      let filteredResults = results.filter(row => {
+        const likelihood = row['Likelihood of Scoreline'];
+        return likelihood && likelihood !== 'TBC';
+      });
+      
+      // Apply team filter
+      if (teamFilter && teamFilter.value) {
+        filteredResults = filteredResults.filter(row => 
+          row['Home Team'] === teamFilter.value || row['Away Team'] === teamFilter.value
+        );
+      }
+      
+      // Apply date filter
+      if (dateFilter && dateFilter.value) {
+        const sortedResults = filteredResults.sort((a, b) => new Date(a.Date) - new Date(b.Date));
+        if (dateFilter.value === 'first5') {
+          filteredResults = sortedResults.slice(0, 5);
+        } else if (dateFilter.value === 'first10') {
+          filteredResults = sortedResults.slice(0, 10);
+        } else if (dateFilter.value === 'first20') {
+          filteredResults = sortedResults.slice(0, 20);
+        }
+      }
+      
+      const sortedResults = filteredResults.sort((a, b) => new Date(a.Date) - new Date(b.Date));
+      
+      const gameNumbers = sortedResults.map((_, index) => index + 1);
+      const percentages = sortedResults.map(row => {
+        const likelihood = row['Likelihood of Scoreline'];
+        const match = likelihood.match(/(\d+\.?\d*)%/);
+        return match ? parseFloat(match[1]) : 0;
+      });
+      
+      const hoverText = sortedResults.map(row => {
+        return `${row.Date}: ${row['Home Team']} vs ${row['Away Team']} (${row.Score})`;
+      });
+      
+      Plotly.newPlot(container, [{
+        x: gameNumbers,
+        y: percentages,
+        type: 'scatter',
+        mode: 'markers',
+        marker: { color: '#8b5cf6', size: 8 },
+        text: hoverText,
+        hoverinfo: 'text+y'
+      }], {
+        margin: { t: 30, r: 20, l: 60, b: 50 },
+        plot_bgcolor: '#0f172a',
+        paper_bgcolor: '#0f172a',
+        font: { color: '#e2e8f0' },
+        yaxis: { title: 'Likelihood (%)', range: [0, 15] },
+        xaxis: { title: 'Game Number' }
+      });
+    }
+    
+    function getOrdinalSuffix(n) {
+      if (n === 1) return 'st';
+      if (n === 2) return 'nd';
+      if (n === 3) return 'rd';
+      return 'th';
+    }
+
+    function renderScorelineRankFrequencyChart(results) {
+      const container = document.getElementById('scoreline-rank-frequency-chart');
+      if (!container) return;
+      
+      const filteredResults = results.filter(row => {
+        const likelihood = row['Likelihood of Scoreline'];
+        return likelihood && likelihood !== 'TBC';
+      });
+      
+      const rankCounts = {};
+      
+      filteredResults.forEach(row => {
+        const likelihood = row['Likelihood of Scoreline'];
+        const rankMatch = likelihood.match(/(\d+)(?:st|nd|rd|th)/);
+        
+        if (rankMatch) {
+          const rank = parseInt(rankMatch[1]);
+          if (!rankCounts[rank]) {
+            rankCounts[rank] = 0;
+          }
+          rankCounts[rank]++;
+        }
+      });
+      
+      const sortedRanks = Object.keys(rankCounts).map(Number).sort((a, b) => a - b);
+      const labels = sortedRanks.map(r => `${r}${getOrdinalSuffix(r)}`);
+      const counts = sortedRanks.map(r => rankCounts[r]);
+      const totalGames = counts.reduce((a, b) => a + b, 0);
+      const percentages = counts.map(c => totalGames > 0 ? (c / totalGames * 100).toFixed(1) : 0);
+      
+      Plotly.newPlot(container, [{
+        x: labels,
+        y: percentages,
+        type: 'bar',
+        marker: { color: '#f97316' },
+        text: percentages.map(p => `${p}%`),
+        textposition: 'outside'
+      }], {
+        margin: { t: 30, r: 20, l: 60, b: 50 },
+        plot_bgcolor: '#0f172a',
+        paper_bgcolor: '#0f172a',
+        font: { color: '#e2e8f0' },
+        yaxis: { title: 'Percentage of Games (%)', range: [0, 100] },
+        xaxis: { title: 'Scoreline Rank' }
+      });
+    }
 
 
   </script>
